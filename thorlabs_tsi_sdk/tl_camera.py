@@ -180,11 +180,13 @@ class TLCameraSDK(object):
         try:
             if platform.system() == 'Windows':
                 # BeamBox: the SDK DLL is loaded by full path from this repo's
-                # dlls\ (its own dependencies then resolve from that folder
-                # first). ThorImageCAM\Bin stays registered, as in the
-                # site-packages copy, for anything the SDK loads by name.
+                # dlls\. The SDK loads its camera/logger/hotplug modules by bare
+                # name with LoadLibraryA, which ignores add_dll_directory and
+                # searches PATH (BBX-173 review r2, R2-1). ThorImageCAM\Bin
+                # (another SDK version) is on the system PATH, so put this
+                # repo's dlls\ first on PATH to keep one version.
+                os.environ["PATH"] = BEAMBOX_DLL_DIR + os.pathsep + os.environ.get("PATH", "")
                 os.add_dll_directory(BEAMBOX_DLL_DIR)
-                os.add_dll_directory(r"C:\Program Files\Thorlabs\ThorImageCAM\Bin")
                 self._sdk = cdll.LoadLibrary(os.path.join(BEAMBOX_DLL_DIR, "thorlabs_tsi_camera_sdk.dll"))
             elif platform.system() == 'Linux':
                 try:
