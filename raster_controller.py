@@ -881,6 +881,11 @@ class SystemController(QObject):
         self._raster_continuous: bool = False
         # BeamBox: continuous run wraps instead of finishing (start_raster repeat=True).
         self._raster_repeat: bool = False
+        # BeamBox: points in the pattern as drawn (after the motor-travel
+        # filter), before repeat / ping-pong expansion. The UI compares the
+        # on-screen pattern with THIS, not with the armed path, which ping-pong
+        # doubles (2N points for an N-point pattern).
+        self._raster_pattern_len: int = 0
         # None while no raster is active; "local" / "remote" otherwise.
         self._raster_source: Optional[str] = None
         # Shots-per-step last programmed by BLACS (None = never told / disarmed).
@@ -1501,6 +1506,7 @@ class SystemController(QObject):
         # `== 1`: in Python True == 1, so a `repeat != 1` guard silently skips
         # looping when repeat is True.
         forever = repeat is True
+        pattern_len = len(pts)
         try:
             laps = 1 if forever else max(1, int(repeat))
         except (TypeError, ValueError):
@@ -1517,6 +1523,7 @@ class SystemController(QObject):
         with self._state_lock:
             self._raster_path_pts = pts
             self._raster_repeat = forever
+            self._raster_pattern_len = pattern_len
             self._raster_index = 0
             self._raster_selected_index = -1
             self._raster_active = True
@@ -1694,6 +1701,13 @@ class SystemController(QObject):
         with self._state_lock:
             return list(self._raster_path_pts)
 
+    def armed_pattern_len(self) -> int:
+        """BeamBox: points in the armed pattern as drawn, before ping-pong /
+        repeat expansion (0 when nothing is armed). Compare the on-screen
+        pattern with this; armed_path_points() is 2N long with ping-pong."""
+        with self._state_lock:
+            return self._raster_pattern_len
+
     def _raster_progress_text(self) -> str:
         """'step/total' for the raster_progress PUB topic (the BLACS tab shows
         it verbatim). The numerator is the CURSOR -- points consumed in the
@@ -1761,6 +1775,8 @@ class SystemController(QObject):
             # fire in place rather than failing the shot.
             self._raster_active = False
             self._raster_path_pts = []
+            self._raster_repeat = False
+            self._raster_pattern_len = 0
             self._raster_index = 0
             self._raster_selected_index = -1
             self._raster_continuous = False
@@ -2491,6 +2507,8 @@ class SystemController(QObject):
             self._raster_active = False
             self._raster_continuous = False
             self._raster_path_pts = []
+            self._raster_repeat = False
+            self._raster_pattern_len = 0
             self._raster_index = 0
             self._raster_selected_index = -1
         self.raster_state_signal.emit(False)

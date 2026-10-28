@@ -313,6 +313,19 @@ def test_start_raster_materializes_indexed_total():
     assert sc._raster_total_steps == len(exp)
 
 
+def test_pingpong_pattern_len_is_the_drawn_pattern():
+    """BeamBox ping-pong arms 2N points for an N-point pattern. The UI's
+    "pending -- press Re-arm" check must compare the on-screen pattern with
+    N: comparing with 2N fired after every arm, and a Re-arm restarts a BLACS
+    raster at point 0 mid-queue, sending the stage to a site out of order."""
+    sc = _start_self()
+    path = [(1.0, 1.0), (2.0, 2.0), (3.0, 3.0)]
+    SystemController.start_raster(sc, path, continuous=False,
+                                  repeat=True, pingpong=True)
+    assert len(SystemController.armed_path_points(sc)) == 6
+    assert SystemController.armed_pattern_len(sc) == 3
+
+
 # ----------------------------------------------------------------------------
 # Arm-time motor reachability filter (2026-08-07 convex-hull incident)
 #

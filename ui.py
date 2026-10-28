@@ -1020,7 +1020,9 @@ class RasterMainWindow(QtWidgets.QMainWindow):
         thing that will run is not the thing they are looking at."""
         if not getattr(self, "_raster_active_ui", False):
             return
-        armed = len(self.controller.armed_path_points())
+        # BeamBox: the pattern length, not the armed path's -- ping-pong
+        # doubles the armed path, which made this fire after every arm.
+        armed = self.controller.armed_pattern_len()
         pending = len(self._raster_preview_pts)
         if pending and pending != armed:
             self._log(f"armed {armed} pts | pending {pending} pts "
@@ -1068,7 +1070,7 @@ class RasterMainWindow(QtWidgets.QMainWindow):
         active = bool(getattr(self, "_raster_active_ui", False))
         show = False
         if active and self._raster_preview_pts:
-            show = len(self._raster_preview_pts) != len(self.controller.armed_path_points())
+            show = len(self._raster_preview_pts) != self.controller.armed_pattern_len()
         self.status_strip.set_warning("pending", show)
 
     def _update_strip_slow(self) -> None:
@@ -1999,10 +2001,14 @@ class RasterMainWindow(QtWidgets.QMainWindow):
 
         # BeamBox: loop the path instead of stopping at its end, so a long
         # acquisition doesn't need someone watching for the raster to run out
-        # and restarting it. pingpong reverses each lap, so the stage retraces
-        # rather than making one long jump back to the start every time.
+        # and restarting it. Ping-pong (config.py raster.back_and_forth, see there)
+        # reverses each lap, so the stage retraces rather than making one long
+        # jump back to the start every time.
+        pingpong = True
+        if _config is not None:
+            pingpong = bool(_config.APP_CONFIG.raster.back_and_forth)
         self.controller.start_raster(it, continuous=continuous, log_dir=log_dir, delay_s=(delay_s if continuous else 0.0), source=source,
-                                     repeat=True, pingpong=True)
+                                     repeat=True, pingpong=pingpong)
 
         self._update_step_mode_ui()
         self._log(f"Raster started: {spec.kind} (looping until stopped)")

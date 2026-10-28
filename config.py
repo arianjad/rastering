@@ -125,6 +125,20 @@ class RasterDefaults:
     spiral_angle_step: float = 0.2
     spiral_angle_step_change: float = 0.0
 
+    # BeamBox: run the pattern forwards, then backwards, then forwards ...
+    # (ping-pong), so the stages retrace their path instead of jumping from
+    # the last point back to the first (one long move less per pass, and no
+    # direction reversal at an arbitrary point: the stages have backlash).
+    # True = the old lab copy's behaviour. False = upstream: every pass
+    # restarts at point 0.
+    # Consequence of True: one armed cycle is 2N points for an N-point
+    # pattern. The shot h5 point_index runs 0..2N-1 and path_len = 2N
+    # (site k is visited at index k and at 2N-1-k; target_xy stays exact),
+    # so "one pass = path_len x shots_per_step shots" means 2 visits per
+    # site, and the two turnaround points get 2 x shots_per_step shots in a
+    # row.
+    back_and_forth: bool = True
+
 
 @dataclass(frozen=True)
 class PathsConfig:

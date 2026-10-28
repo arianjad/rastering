@@ -55,7 +55,8 @@ def _strip_self(**over):
         status_strip=mock.Mock(name="status_strip"),
         controller=types.SimpleNamespace(
             _raster_index=37, _raster_total_steps=150, calibration=object(),
-            armed_path_points=lambda: [0] * 150),
+            armed_path_points=lambda: [0] * 150,
+            armed_pattern_len=lambda: 150),
         _raster_active_ui=True,
         _last_raster_source="remote",
         _raster_preview_pts=[],
