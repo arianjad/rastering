@@ -26,6 +26,9 @@ _logger = logging.getLogger('thorlabs_tsi_sdk.tl_camera')
 
 """ Config constants """
 _STRING_MAX = 4096  # for functions that return strings built on C char arrays, this is the max number of characters
+# BeamBox (vendored copy, see README-beambox.md): this repo's own dlls\ folder,
+# found relative to this file, so the GUI does not depend on any other folder.
+BEAMBOX_DLL_DIR = os.path.normpath(os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, "dlls"))
 
 """ Callback ctypes types """
 _camera_connect_callback_type = CFUNCTYPE(None, c_char_p, c_int, c_void_p)
@@ -176,10 +179,13 @@ class TLCameraSDK(object):
 
         try:
             if platform.system() == 'Windows':
-                # self._sdk = cdll.LoadLibrary(r"thorlabs_tsi_camera_sdk.dll")
-                os.add_dll_directory(r"C:\Users\MITBeamBox_01\Desktop\SOFTWARE\rastering\dlls")
+                # BeamBox: the SDK DLL is loaded by full path from this repo's
+                # dlls\ (its own dependencies then resolve from that folder
+                # first). ThorImageCAM\Bin stays registered, as in the
+                # site-packages copy, for anything the SDK loads by name.
+                os.add_dll_directory(BEAMBOX_DLL_DIR)
                 os.add_dll_directory(r"C:\Program Files\Thorlabs\ThorImageCAM\Bin")
-                self._sdk = cdll.LoadLibrary(r"thorlabs_tsi_camera_sdk.dll")
+                self._sdk = cdll.LoadLibrary(os.path.join(BEAMBOX_DLL_DIR, "thorlabs_tsi_camera_sdk.dll"))
             elif platform.system() == 'Linux':
                 try:
                     self._sdk = cdll.LoadLibrary(r"./libthorlabs_tsi_camera_sdk.so")
