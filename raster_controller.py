@@ -879,6 +879,8 @@ class SystemController(QObject):
         self._raster_selected_index: int = -1
         self._raster_active: bool = False
         self._raster_continuous: bool = False
+        # BeamBox: continuous run wraps instead of finishing (start_raster repeat=True).
+        self._raster_repeat: bool = False
         # None while no raster is active; "local" / "remote" otherwise.
         self._raster_source: Optional[str] = None
         # Shots-per-step last programmed by BLACS (None = never told / disarmed).
@@ -1420,13 +1422,26 @@ class SystemController(QObject):
 
     # --- raster control ---
 
-    def start_raster(self, path_iter, *, continuous: bool = True, log_dir: str | None = None, delay_s: float = 0.0, source: str = "local") -> None:
+    def start_raster(self, path_iter, *, continuous: bool = True, log_dir: str | None = None, delay_s: float = 0.0, source: str = "local",
+                     repeat: int | bool = 1, pingpong: bool = True) -> None:
         """
         Start rastering along a target-space path (iterable of (x,y) points).
         If continuous=False, raster is "armed" and only advances when raster_step() is called.
 
         `source` records who armed it ("local" = GUI panel, "remote" = armed on
         a ZMQ client's behalf); it only drives the UI's control indicator.
+
+        `repeat` (BeamBox) says what a CONTINUOUS run does when the path runs
+        out (step mode always wraps, see raster_step):
+            1     - stop, the upstream behaviour
+            n > 1 - run the path n times
+            True  - keep going until stop_raster() is called
+        With `pingpong` (only used when repeating) the path reverses every
+        other lap, so it retraces its own steps instead of jumping from the
+        last point back to the first. That saves one long move per lap, and
+        stops the stages reversing direction at an arbitrary point -- which
+        matters, they have backlash. The turnaround points are visited twice
+        in a row (last point of one lap = first point of the next).
         """
         with self._state_lock:
             cal = self.calibration
@@ -1482,8 +1497,26 @@ class SystemController(QObject):
                     f"{self.motor_bounds} mm."
                 )
 
+        # BeamBox: repeat / ping-pong. Test `is True` explicitly, never
+        # `== 1`: in Python True == 1, so a `repeat != 1` guard silently skips
+        # looping when repeat is True.
+        forever = repeat is True
+        try:
+            laps = 1 if forever else max(1, int(repeat))
+        except (TypeError, ValueError):
+            laps = 1
+        if forever:
+            # One cycle; the cursor wraps it (continuous via _raster_repeat,
+            # step mode always). With ping-pong a cycle is out-and-back.
+            if pingpong:
+                pts = pts + pts[::-1]
+        elif laps > 1:
+            pts = [p for lap in range(laps)
+                   for p in (pts[::-1] if (pingpong and lap % 2) else pts)]
+
         with self._state_lock:
             self._raster_path_pts = pts
+            self._raster_repeat = forever
             self._raster_index = 0
             self._raster_selected_index = -1
             self._raster_active = True
@@ -1508,7 +1541,12 @@ class SystemController(QObject):
 
         self.raster_state_signal.emit(True)
         self.raster_source_signal.emit(source)
-        self.status_signal.emit("Raster started." if continuous else "Raster armed (step mode).")
+        started = "Raster started." if continuous else "Raster armed (step mode)."
+        if forever:
+            started += " Looping until stopped."
+        elif laps > 1:
+            started += f" {laps} laps."
+        self.status_signal.emit(started)
 
         if continuous:
             self._enqueue_next_raster_point()
@@ -2428,7 +2466,8 @@ class SystemController(QObject):
             active = self._raster_active
             if not active or not self._raster_continuous:
                 return
-            pt = self._next_raster_point_locked()
+            pt = self._next_raster_point_locked(
+                wrap=getattr(self, "_raster_repeat", False))
             if pt is not None:
                 x, y = pt
                 cmd = MotorCommand(

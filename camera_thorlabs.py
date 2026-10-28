@@ -107,8 +107,9 @@ class ThorCamera:
         self._cam.roi = self._cam.roi.__class__(off_x, off_y,
                                                 off_x + req_w,
                                                 off_y + req_h)
-        self._live_width = req_w
-        self._live_height = req_h
+        actual = self._cam.roi
+        self._live_width = actual.lower_right_x_pixels - actual.upper_left_x_pixels + 1
+        self._live_height = actual.lower_right_y_pixels - actual.upper_left_y_pixels + 1
 
     def reinit_roi(self, width: int, height: int,
                    start_x: int, start_y: int) -> None:
@@ -116,8 +117,9 @@ class ThorCamera:
         self._cam.roi = self._cam.roi.__class__(start_x, start_y,
                                                 start_x + width,
                                                 start_y + height)
-        self._live_width = width
-        self._live_height = height
+        actual = self._cam.roi
+        self._live_width = actual.lower_right_x_pixels - actual.upper_left_x_pixels + 1
+        self._live_height = actual.lower_right_y_pixels - actual.upper_left_y_pixels + 1
         self._cam.arm(2)
         self._cam.issue_software_trigger()
 

@@ -1997,10 +1997,15 @@ class RasterMainWindow(QtWidgets.QMainWindow):
         if hasattr(self, "sleepTimer"):
             delay_s = float(self.sleepTimer.value())
 
-        self.controller.start_raster(it, continuous=continuous, log_dir=log_dir, delay_s=(delay_s if continuous else 0.0), source=source)
+        # BeamBox: loop the path instead of stopping at its end, so a long
+        # acquisition doesn't need someone watching for the raster to run out
+        # and restarting it. pingpong reverses each lap, so the stage retraces
+        # rather than making one long jump back to the start every time.
+        self.controller.start_raster(it, continuous=continuous, log_dir=log_dir, delay_s=(delay_s if continuous else 0.0), source=source,
+                                     repeat=True, pingpong=True)
 
         self._update_step_mode_ui()
-        self._log(f"Raster started: {spec.kind}")
+        self._log(f"Raster started: {spec.kind} (looping until stopped)")
         # Arming consumes the pending pattern -- it IS the armed one now, so
         # the grey overlay (and any direction lines tracing it) is stale.
         # Graphics-only, like the state slot: the cache must survive arming for
