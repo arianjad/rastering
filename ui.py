@@ -25,7 +25,7 @@ import pyqtgraph as pg
 
 from raster_paths import RasterSpec, iter_path_from_spec, collect_points
 from raster_controller import load_last_calibration_path, save_user_defaults, load_user_defaults
-from camera import UEyeCameraThread, UEyeConfig
+from camera_thorlabs import ThorCameraThread, ThorCamConfig  # BeamBox: ThorLabs Zelux, not uEye
 from camera_settings_dock import CameraSettingsDock
 import status_strip as _strip
 from status_strip import StatusStrip, StripRow
@@ -510,8 +510,8 @@ class RasterMainWindow(QtWidgets.QMainWindow):
         settings = self.cam_dock.get_current_settings()
 
         try:
-            from camera import save_settings_to_ini
-            save_settings_to_ini(save_path, settings)
+            from camera_thorlabs import save_thorcam_settings_to_ini
+            save_thorcam_settings_to_ini(save_path, settings)
             self._loaded_ini_path = save_path
             if hasattr(self, "cam_dock"):
                 self.cam_dock.set_loaded_config_label(save_path)
@@ -548,7 +548,7 @@ class RasterMainWindow(QtWidgets.QMainWindow):
 
     def _apply_ini_to_running_camera(self, ini_path: str) -> None:
         """Parse an INI file and apply all settings to the running camera."""
-        from camera import load_ueye_config_from_ini, _load_display_settings_from_ini
+        from camera_thorlabs import load_thorcam_config_from_ini, _load_display_settings_from_ini
 
         if not hasattr(self, "camera_thread") or self.camera_thread is None:
             self._log("No camera thread running.")
@@ -559,35 +559,22 @@ class RasterMainWindow(QtWidgets.QMainWindow):
             if _config is not None and hasattr(_config, "APP_CONFIG"):
                 cam = _config.APP_CONFIG.camera
 
+            # ThorCamConfig has no camera_id / use_freeze fields (uEye only).
             overrides = {}
             if cam is not None:
-                overrides["camera_id"] = cam.camera_id
-                overrides["use_freeze"] = cam.use_freeze
                 overrides["emit_rgb"] = cam.emit_rgb
 
-            cfg = load_ueye_config_from_ini(ini_path, **overrides)
+            cfg = load_thorcam_config_from_ini(ini_path, **overrides)
         except Exception as e:
             self._log(f"Failed to parse config: {e}")
             return
 
-        # Apply timing mode first (affects how pixel clock and exposure behave)
-        self.camera_thread.set_prioritize_exposure(cfg.prioritize_exposure)
-        if hasattr(self, "cam_dock"):
-            self.cam_dock.timing_mode_combo.blockSignals(True)
-            self.cam_dock.timing_mode_combo.setCurrentIndex(1 if cfg.prioritize_exposure else 0)
-            self.cam_dock.timing_mode_combo.blockSignals(False)
-            self.cam_dock.fps_spin.blockSignals(True)
-            self.cam_dock.fps_spin.setValue(cfg.target_fps)
-            self.cam_dock.fps_spin.blockSignals(False)
-
-        # Apply imaging-quality fields (timing + gain + gamma + exposure).
-        # Geometry (AOI + rotation + flip) goes through the shared helper.
-        self.camera_thread.set_pixel_clock(cfg.pixel_clock_mhz)
-        self.camera_thread.set_target_fps(cfg.target_fps)
-        self.camera_thread.set_master_gain(cfg.master_gain)
-        self.camera_thread.set_gain_boost(cfg.enable_gain_boost)
-        self.camera_thread.set_gamma(cfg.gamma)
-        self.camera_thread.set_exposure_ms(cfg.exposure_ms)
+        # BeamBox ThorLabs Zelux: no timing mode, pixel clock, target fps,
+        # gain boost or hardware gamma (those ThorCameraThread slots are no-ops).
+        # Apply gain + exposure here; AOI + rotation + flip go through the
+        # shared geometry helper below.
+        self.camera_thread.set_master_gain(cfg.gain)
+        self.camera_thread.set_exposure_ms(cfg.exposure_us / 1000.0)
 
         # Rotation / flips are stored in a custom [Display] section in our
         # extended INIs; absent keys mean "leave alone". Read them BEFORE
@@ -628,7 +615,7 @@ class RasterMainWindow(QtWidgets.QMainWindow):
         self._last_frame_shape = None  # force display recalculation
 
     def _start_camera(self) -> None:
-        from camera import UEyeCameraThread, UEyeConfig
+        from camera_thorlabs import ThorCameraThread, ThorCamConfig
 
         cfg = None  # will be set below
         self._loaded_ini_path = ""
@@ -641,13 +628,8 @@ class RasterMainWindow(QtWidgets.QMainWindow):
             ini_path = getattr(cam, "camera_params_ini", None)
             if ini_path and os.path.isfile(ini_path):
                 try:
-                    from camera import load_ueye_config_from_ini
-                    cfg = load_ueye_config_from_ini(
-                        ini_path,
-                        camera_id=cam.camera_id,
-                        use_freeze=cam.use_freeze,
-                        emit_rgb=cam.emit_rgb,
-                    )
+                    from camera_thorlabs import load_thorcam_config_from_ini
+                    cfg = load_thorcam_config_from_ini(ini_path, emit_rgb=cam.emit_rgb)
                     self._loaded_ini_path = ini_path
                     self._log(f"Camera config loaded from .ini: {ini_path}")
                 except Exception as e:
@@ -656,7 +638,7 @@ class RasterMainWindow(QtWidgets.QMainWindow):
 
                 # Load saved display settings (rotation, flips) if present
                 try:
-                    from camera import _load_display_settings_from_ini
+                    from camera_thorlabs import _load_display_settings_from_ini
                     disp = _load_display_settings_from_ini(ini_path)
                     if "rotation_k" in disp:
                         self._rotation_k = disp["rotation_k"]
@@ -684,29 +666,24 @@ class RasterMainWindow(QtWidgets.QMainWindow):
 
             # --- Option B: manual config.py fields ---
             if cfg is None:
-                cfg = UEyeConfig(
-                    camera_id=cam.camera_id,
+                # ThorCamConfig: no camera_id, pixel clock, gamma, gain boost
+                # or target fps (uEye-only fields in config.CameraConfig).
+                cfg = ThorCamConfig(
                     width=cam.width,
                     height=cam.height,
-                    exposure_ms=cam.exposure_ms_default,
-                    pixel_clock_mhz=cam.pixel_clock_mhz,
-                    use_freeze=cam.use_freeze,
+                    exposure_us=cam.exposure_ms_default * 1000.0,
                     emit_rgb=cam.emit_rgb,
                     roi_offset_x=cam.roi_offset_x,
                     roi_offset_y=cam.roi_offset_y,
-                    master_gain=cam.master_gain,
-                    gamma=cam.gamma,
-                    enable_gain_boost=cam.enable_gain_boost,
-                    target_fps=cam.target_fps,
                 )
 
             # flips are display-only (your UI transform uses these)
             self._flip_x = bool(cam.flip_x)
             self._flip_y = bool(cam.flip_y)
         else:
-            cfg = UEyeConfig()  # fallback defaults
+            cfg = ThorCamConfig()  # fallback defaults
 
-        self.camera_thread = UEyeCameraThread(cfg, parent=self)
+        self.camera_thread = ThorCameraThread(cfg, parent=self)
 
         # Frame coalescing: the camera thread can outpace a busy GUI thread;
         # the old direct queued connection then accumulated 1.3 MB frame
@@ -741,11 +718,18 @@ class RasterMainWindow(QtWidgets.QMainWindow):
             self.cam_dock.connect_to_camera_thread(self.camera_thread)
             self.cam_dock.set_loaded_config_label(self._loaded_ini_path)
             # Initialize timing mode and FPS from config
+            # ThorLabs Zelux: frame rate is not settable (set_target_fps is a
+            # no-op; the grab loop soft-throttles at cfg.max_fps, 15 fps
+            # default), exposure is the only timing control. Upstream removed
+            # the top-bar exposure spinbox, so put the dock in Exposure
+            # Control and enable its exposure widgets; the fps value is
+            # display only.
             self.cam_dock.timing_mode_combo.blockSignals(True)
-            self.cam_dock.timing_mode_combo.setCurrentIndex(1 if cfg.prioritize_exposure else 0)
+            self.cam_dock.timing_mode_combo.setCurrentIndex(1)
             self.cam_dock.timing_mode_combo.blockSignals(False)
+            self.cam_dock._on_timing_mode_changed(1)
             self.cam_dock.fps_spin.blockSignals(True)
-            self.cam_dock.fps_spin.setValue(cfg.target_fps)
+            self.cam_dock.fps_spin.setValue(float(cfg.max_fps))
             self.cam_dock.fps_spin.blockSignals(False)
 
         self.camera_thread.start()
@@ -763,7 +747,7 @@ class RasterMainWindow(QtWidgets.QMainWindow):
         # value so it reflects what the camera was opened with.
         if hasattr(self, "cam_dock"):
             self.cam_dock.exposure_spin.blockSignals(True)
-            self.cam_dock.exposure_spin.setValue(float(cfg.exposure_ms))
+            self.cam_dock.exposure_spin.setValue(float(cfg.exposure_us / 1000.0))  # ThorCamConfig stores us
             self.cam_dock.exposure_spin.blockSignals(False)
 
 

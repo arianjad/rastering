@@ -25,8 +25,8 @@ Bounds = Tuple[float, float, float, float]  # xmin, xmax, ymin, ymax
 @dataclass(frozen=True)
 class HardwareConfig:
     # Motor serials
-    serial_x: str = "27270522"
-    serial_y: str = "27270471"
+    serial_x: str = "27270103"  # BeamBox
+    serial_y: str = "27007520"  # BeamBox
 
     # Run with SimulatedMotor instead of real KCubes (UI/raster testing
     # with no motor connected). Env var RASTER_SIMULATE=1 overrides this at
@@ -98,8 +98,8 @@ class CameraConfig:
     flip_y: bool = True
 
     # Requested AOI / output size (camera.py can honor these depending on your setup)
-    width: int = 500 #1280
-    height: int = 500 #1024
+    width: int = 1440
+    height: int = 1080
     # Add offsets to shift the AOI from the center (pixels)
     # Swapped x,y or inverted +/- if you rotate or flip the image in the UI
     roi_offset_x: int = 0

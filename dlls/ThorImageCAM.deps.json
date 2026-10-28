@@ -1,0 +1,459 @@
+{
+  "runtimeTarget": {
+    "name": ".NETCoreApp,Version=v6.0",
+    "signature": ""
+  },
+  "compilationOptions": {},
+  "targets": {
+    ".NETCoreApp,Version=v6.0": {
+      "ThorImageCAM/1.2.17": {
+        "dependencies": {
+          "CameraControl": "1.0.0",
+          "CameraSettings": "1.0.0",
+          "CaptureConfiguration": "1.0.0",
+          "ColorControl": "1.0.0",
+          "Prism": "8.1.97",
+          "Telerik.Windows.Controls.Data.for.Wpf": "2021.1.325",
+          "Telerik.Windows.Controls.RibbonView.for.Wpf": "2021.1.325",
+          "Telerik.Windows.Themes.Fluent.for.Wpf": "2021.1.325",
+          "ThorLog": "1.0.2",
+          "TriggerControl": "1.0.0",
+          "Viewport": "1.0.0"
+        },
+        "runtime": {
+          "ThorImageCAM.dll": {}
+        }
+      },
+      "BitMiracle.LibTiff.NET/2.4.660": {
+        "runtime": {
+          "lib/netstandard2.0/BitMiracle.LibTiff.NET.dll": {
+            "assemblyVersion": "2.4.660.0",
+            "fileVersion": "2.4.660.0"
+          }
+        }
+      },
+      "DrawingTool/1.2.7": {
+        "runtime": {
+          "lib/net6.0-windows7.0/DrawingTool.dll": {
+            "assemblyVersion": "1.2.7.0",
+            "fileVersion": "1.2.7.0"
+          }
+        }
+      },
+      "Prism/8.1.97": {
+        "runtime": {
+          "lib/net5.0-windows7.0/Microsoft.Xaml.Behaviors.dll": {
+            "assemblyVersion": "1.1.0.0",
+            "fileVersion": "1.1.31.10800"
+          },
+          "lib/net5.0-windows7.0/Prism.Unity.Wpf.dll": {
+            "assemblyVersion": "8.1.97.5141",
+            "fileVersion": "8.1.97.5141"
+          },
+          "lib/net5.0-windows7.0/Prism.Wpf.dll": {
+            "assemblyVersion": "8.1.97.5141",
+            "fileVersion": "8.1.97.5141"
+          },
+          "lib/net5.0-windows7.0/Prism.dll": {
+            "assemblyVersion": "8.1.97.5141",
+            "fileVersion": "8.1.97.5141"
+          },
+          "lib/net5.0-windows7.0/Unity.Abstractions.dll": {
+            "assemblyVersion": "5.11.7.0",
+            "fileVersion": "5.11.7.0"
+          },
+          "lib/net5.0-windows7.0/Unity.Container.dll": {
+            "assemblyVersion": "5.11.11.0",
+            "fileVersion": "5.11.11.0"
+          }
+        }
+      },
+      "Telerik.Windows.Controls.Chart.for.Wpf/2021.1.325": {
+        "dependencies": {
+          "Telerik.Windows.Controls.for.Wpf": "2021.1.325",
+          "Telerik.Windows.Data.for.Wpf": "2021.1.325"
+        },
+        "runtime": {
+          "lib/net5.0-windows/Telerik.Windows.Controls.Chart.dll": {
+            "assemblyVersion": "2021.1.325.50",
+            "fileVersion": "2021.1.325.50"
+          }
+        }
+      },
+      "Telerik.Windows.Controls.Data.for.Wpf/2021.1.325": {
+        "dependencies": {
+          "Telerik.Windows.Controls.Input.for.Wpf": "2021.1.325",
+          "Telerik.Windows.Controls.for.Wpf": "2021.1.325",
+          "Telerik.Windows.Data.for.Wpf": "2021.1.325"
+        },
+        "runtime": {
+          "lib/net5.0-windows/Telerik.Windows.Controls.Data.dll": {
+            "assemblyVersion": "2021.1.325.50",
+            "fileVersion": "2021.1.325.50"
+          }
+        }
+      },
+      "Telerik.Windows.Controls.FileDialogs.for.Wpf/2021.1.325": {
+        "dependencies": {
+          "Telerik.Windows.Controls.GridView.for.Wpf": "2021.1.325",
+          "Telerik.Windows.Controls.Input.for.Wpf": "2021.1.325",
+          "Telerik.Windows.Controls.Navigation.for.Wpf": "2021.1.325",
+          "Telerik.Windows.Controls.for.Wpf": "2021.1.325",
+          "Telerik.Windows.Data.for.Wpf": "2021.1.325"
+        },
+        "runtime": {
+          "lib/net5.0-windows/Telerik.Windows.Controls.FileDialogs.dll": {
+            "assemblyVersion": "2021.1.325.50",
+            "fileVersion": "2021.1.325.50"
+          }
+        }
+      },
+      "Telerik.Windows.Controls.for.Wpf/2021.1.325": {
+        "runtime": {
+          "lib/net5.0-windows/Telerik.Windows.Controls.dll": {
+            "assemblyVersion": "2021.1.325.50",
+            "fileVersion": "2021.1.325.50"
+          }
+        }
+      },
+      "Telerik.Windows.Controls.GridView.for.Wpf/2021.1.325": {
+        "dependencies": {
+          "Telerik.Windows.Controls.Input.for.Wpf": "2021.1.325",
+          "Telerik.Windows.Controls.for.Wpf": "2021.1.325",
+          "Telerik.Windows.Data.for.Wpf": "2021.1.325"
+        },
+        "runtime": {
+          "lib/net5.0-windows/Telerik.Windows.Controls.GridView.dll": {
+            "assemblyVersion": "2021.1.325.50",
+            "fileVersion": "2021.1.325.50"
+          }
+        }
+      },
+      "Telerik.Windows.Controls.Input.for.Wpf/2021.1.325": {
+        "dependencies": {
+          "Telerik.Windows.Controls.for.Wpf": "2021.1.325"
+        },
+        "runtime": {
+          "lib/net5.0-windows/Telerik.Windows.Controls.Input.dll": {
+            "assemblyVersion": "2021.1.325.50",
+            "fileVersion": "2021.1.325.50"
+          }
+        }
+      },
+      "Telerik.Windows.Controls.Navigation.for.Wpf/2021.1.325": {
+        "dependencies": {
+          "Telerik.Windows.Controls.for.Wpf": "2021.1.325",
+          "Telerik.Windows.Data.for.Wpf": "2021.1.325"
+        },
+        "runtime": {
+          "lib/net5.0-windows/Telerik.Windows.Controls.Navigation.dll": {
+            "assemblyVersion": "2021.1.325.50",
+            "fileVersion": "2021.1.325.50"
+          }
+        }
+      },
+      "Telerik.Windows.Controls.RibbonView.for.Wpf/2021.1.325": {
+        "dependencies": {
+          "Telerik.Windows.Controls.Input.for.Wpf": "2021.1.325",
+          "Telerik.Windows.Controls.Navigation.for.Wpf": "2021.1.325",
+          "Telerik.Windows.Controls.for.Wpf": "2021.1.325"
+        },
+        "runtime": {
+          "lib/net5.0-windows/Telerik.Windows.Controls.RibbonView.dll": {
+            "assemblyVersion": "2021.1.325.50",
+            "fileVersion": "2021.1.325.50"
+          }
+        }
+      },
+      "Telerik.Windows.Data.for.Wpf/2021.1.325": {
+        "dependencies": {
+          "Telerik.Windows.Controls.for.Wpf": "2021.1.325"
+        },
+        "runtime": {
+          "lib/net5.0-windows/Telerik.Windows.Data.dll": {
+            "assemblyVersion": "2021.1.325.50",
+            "fileVersion": "2021.1.325.50"
+          }
+        }
+      },
+      "Telerik.Windows.Themes.Fluent.for.Wpf/2021.1.325": {
+        "dependencies": {
+          "Telerik.Windows.Controls.for.Wpf": "2021.1.325"
+        },
+        "runtime": {
+          "lib/net5.0-windows/Telerik.Windows.Themes.Fluent.dll": {
+            "assemblyVersion": "2021.1.325.50",
+            "fileVersion": "2021.1.325.50"
+          }
+        }
+      },
+      "ThorLog/1.0.2": {
+        "runtime": {
+          "lib/net5.0-windows7.0/ThorLogWrapper.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "CameraControl/1.0.0": {
+        "dependencies": {
+          "PluginCommon": "1.0.0",
+          "Telerik.Windows.Controls.Input.for.Wpf": "2021.1.325"
+        },
+        "runtime": {
+          "CameraControl.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "CameraSettings/1.0.0": {
+        "dependencies": {
+          "PluginCommon": "1.0.0",
+          "Telerik.Windows.Controls.Input.for.Wpf": "2021.1.325"
+        },
+        "runtime": {
+          "CameraSettings.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "CaptureConfiguration/1.0.0": {
+        "dependencies": {
+          "PluginCommon": "1.0.0",
+          "Telerik.Windows.Controls.FileDialogs.for.Wpf": "2021.1.325"
+        },
+        "runtime": {
+          "CaptureConfiguration.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "ColorControl/1.0.0": {
+        "dependencies": {
+          "PluginCommon": "1.0.0",
+          "Telerik.Windows.Controls.Input.for.Wpf": "2021.1.325"
+        },
+        "runtime": {
+          "ColorControl.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "PluginCommon/1.0.0": {
+        "dependencies": {
+          "ThorImageCAMShared": "1.0.0"
+        },
+        "runtime": {
+          "PluginCommon.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "ThorImageCAMShared/1.0.0": {
+        "dependencies": {
+          "BitMiracle.LibTiff.NET": "2.4.660",
+          "DrawingTool": "1.2.7",
+          "Prism": "8.1.97",
+          "Telerik.Windows.Controls.Input.for.Wpf": "2021.1.325",
+          "ThorLog": "1.0.2"
+        },
+        "runtime": {
+          "ThorImageCAMShared.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "TriggerControl/1.0.0": {
+        "dependencies": {
+          "PluginCommon": "1.0.0",
+          "Telerik.Windows.Controls.Input.for.Wpf": "2021.1.325"
+        },
+        "runtime": {
+          "TriggerControl.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "Viewport/1.0.0": {
+        "dependencies": {
+          "DrawingTool": "1.2.7",
+          "PluginCommon": "1.0.0",
+          "Telerik.Windows.Controls.Chart.for.Wpf": "2021.1.325",
+          "Telerik.Windows.Controls.GridView.for.Wpf": "2021.1.325",
+          "Telerik.Windows.Controls.RibbonView.for.Wpf": "2021.1.325"
+        },
+        "runtime": {
+          "Viewport.dll": {
+            "assemblyVersion": "1.0.0.0",
+            "fileVersion": "1.0.0.0"
+          }
+        }
+      },
+      "Thorlabs.CustomControls.TelerikAndSciChart/0.0.1.0": {
+        "runtime": {
+          "Thorlabs.CustomControls.TelerikAndSciChart.dll": {
+            "assemblyVersion": "0.0.1.0",
+            "fileVersion": "0.0.1.0"
+          }
+        }
+      }
+    }
+  },
+  "libraries": {
+    "ThorImageCAM/1.2.17": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "BitMiracle.LibTiff.NET/2.4.660": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-Drd0fDFVrR3v19IJtqiDVnjgcVZoGlzFw/CYni1OQ5/xVYvjPNp18E9eu+dH/RmpIUw6Pn/JhE/H+Yc3kHI89A==",
+      "path": "bitmiracle.libtiff.net/2.4.660",
+      "hashPath": "bitmiracle.libtiff.net.2.4.660.nupkg.sha512"
+    },
+    "DrawingTool/1.2.7": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-0E4CXz95SWIa7yGUESNSnpOtguJvYpTO+4opNff+oEaMsFilHYsGntVcZr0PcMretFgxW92AAcyg5ApULJ/WWQ==",
+      "path": "drawingtool/1.2.7",
+      "hashPath": "drawingtool.1.2.7.nupkg.sha512"
+    },
+    "Prism/8.1.97": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-lezg6MYBfbI8Yo+9cp1QU/4LpKRwkJitsxiH+EWD8ulx3PAJMwrGDuxHwSSRoDO5LPg+xClHHrzqI45ulWUkqQ==",
+      "path": "prism/8.1.97",
+      "hashPath": "prism.8.1.97.nupkg.sha512"
+    },
+    "Telerik.Windows.Controls.Chart.for.Wpf/2021.1.325": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-ioGpohA2PTJkd3yv9ypyP1GLxfdjE21ItspojU4sZPbzV11PokCgLx/YVlFQFJcs20fwb3qt7va/rfsL07ljIw==",
+      "path": "telerik.windows.controls.chart.for.wpf/2021.1.325",
+      "hashPath": "telerik.windows.controls.chart.for.wpf.2021.1.325.nupkg.sha512"
+    },
+    "Telerik.Windows.Controls.Data.for.Wpf/2021.1.325": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-/K2xRyL9iiPa0euQRYDE8Olnqgzzdgm8k8CShpY6g4RcUPj9OophEaX0qPssmvshY7jXA4vR8MGQw286bPg+oQ==",
+      "path": "telerik.windows.controls.data.for.wpf/2021.1.325",
+      "hashPath": "telerik.windows.controls.data.for.wpf.2021.1.325.nupkg.sha512"
+    },
+    "Telerik.Windows.Controls.FileDialogs.for.Wpf/2021.1.325": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-+AOLaCIlKDNrEZ5sY5bqEOlUDthCgtbkcgql4PrncQ5IrJdLBf/yjuSqLK3MeAcqZS890k2s82z6GsY13ZKYvg==",
+      "path": "telerik.windows.controls.filedialogs.for.wpf/2021.1.325",
+      "hashPath": "telerik.windows.controls.filedialogs.for.wpf.2021.1.325.nupkg.sha512"
+    },
+    "Telerik.Windows.Controls.for.Wpf/2021.1.325": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-AiZ88Yj/2To5MY6TjSMaDIyKCdGfED5QUu5Oi1u8u2YZ26wa1d+h5ESSkn+iANNEuXxOclyi2X93ea/grfaf3Q==",
+      "path": "telerik.windows.controls.for.wpf/2021.1.325",
+      "hashPath": "telerik.windows.controls.for.wpf.2021.1.325.nupkg.sha512"
+    },
+    "Telerik.Windows.Controls.GridView.for.Wpf/2021.1.325": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-o3/uKGOukXLQXarWQoHr6Vf00nYtwV1ms00Vn/pqOEVOwBjJA/RM17hTbptT+S50muk/dznntB2AG+8dz8wWNA==",
+      "path": "telerik.windows.controls.gridview.for.wpf/2021.1.325",
+      "hashPath": "telerik.windows.controls.gridview.for.wpf.2021.1.325.nupkg.sha512"
+    },
+    "Telerik.Windows.Controls.Input.for.Wpf/2021.1.325": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-FYv6WplIs8/wROBMb1b7kxtYoGFT+3tZz5XTYZbrLO2LfPHKQhQ2f58IzPGx9VitGThT5Hy82wBX/c6GoxczYg==",
+      "path": "telerik.windows.controls.input.for.wpf/2021.1.325",
+      "hashPath": "telerik.windows.controls.input.for.wpf.2021.1.325.nupkg.sha512"
+    },
+    "Telerik.Windows.Controls.Navigation.for.Wpf/2021.1.325": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-Ijp5TG/lXRX3ZAfG8G7MEZN1oQpUtmxYxdjavKejdsHycyB3xWo2pKn26MHjaRBnDZuKezP94bSrIESuoprrLg==",
+      "path": "telerik.windows.controls.navigation.for.wpf/2021.1.325",
+      "hashPath": "telerik.windows.controls.navigation.for.wpf.2021.1.325.nupkg.sha512"
+    },
+    "Telerik.Windows.Controls.RibbonView.for.Wpf/2021.1.325": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-btN3BdW4EpATnjinB6Wwp55sGKMAFwzwMP5bvB0IvYZafF7VnoeqZ+y56uCLze/mwWgiLntZw9PCdr+GH0dQiw==",
+      "path": "telerik.windows.controls.ribbonview.for.wpf/2021.1.325",
+      "hashPath": "telerik.windows.controls.ribbonview.for.wpf.2021.1.325.nupkg.sha512"
+    },
+    "Telerik.Windows.Data.for.Wpf/2021.1.325": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-NA5VSAn/pBVE3zVBnuiVtuZJkCbKbBjv6ZYusO2nYHZ+ZyjGDSslxS5eADigsgBb5Hxm0OfXxoej6noiBqLJuQ==",
+      "path": "telerik.windows.data.for.wpf/2021.1.325",
+      "hashPath": "telerik.windows.data.for.wpf.2021.1.325.nupkg.sha512"
+    },
+    "Telerik.Windows.Themes.Fluent.for.Wpf/2021.1.325": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-+BwUN/m7tMSFTTjO3C/jT09ancHH6BDrRd+DoEyX7QBplLwv6Bm3Dv/lsXUZuuFHAKYbl0RSktQ3OfAZSv7yWQ==",
+      "path": "telerik.windows.themes.fluent.for.wpf/2021.1.325",
+      "hashPath": "telerik.windows.themes.fluent.for.wpf.2021.1.325.nupkg.sha512"
+    },
+    "ThorLog/1.0.2": {
+      "type": "package",
+      "serviceable": true,
+      "sha512": "sha512-wjgEubIaelY+w2M+O/paZ6uefTpDdsgwfkIOuhPswoLuV1SoddDh8cLMm8nAXlAJtzxSM2VbXkfa05aCwVWU9g==",
+      "path": "thorlog/1.0.2",
+      "hashPath": "thorlog.1.0.2.nupkg.sha512"
+    },
+    "CameraControl/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "CameraSettings/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "CaptureConfiguration/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "ColorControl/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "PluginCommon/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "ThorImageCAMShared/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "TriggerControl/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Viewport/1.0.0": {
+      "type": "project",
+      "serviceable": false,
+      "sha512": ""
+    },
+    "Thorlabs.CustomControls.TelerikAndSciChart/0.0.1.0": {
+      "type": "reference",
+      "serviceable": false,
+      "sha512": ""
+    }
+  }
+}
