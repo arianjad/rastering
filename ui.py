@@ -569,12 +569,14 @@ class RasterMainWindow(QtWidgets.QMainWindow):
             self._log(f"Failed to parse config: {e}")
             return
 
-        # BeamBox ThorLabs Zelux: no timing mode, pixel clock, target fps,
-        # gain boost or hardware gamma (those ThorCameraThread slots are no-ops).
-        # Apply gain + exposure here; AOI + rotation + flip go through the
-        # shared geometry helper below.
+        # BeamBox ThorLabs Zelux: no timing mode, pixel clock, target fps or
+        # gain boost (those ThorCameraThread slots are no-ops). Gamma is a
+        # software gamma applied in ThorCamera.grab(). Apply gain, exposure
+        # and gamma here; AOI + rotation + flip go through the shared
+        # geometry helper below.
         self.camera_thread.set_master_gain(cfg.gain)
         self.camera_thread.set_exposure_ms(cfg.exposure_us / 1000.0)
+        self.camera_thread.set_gamma(cfg.gamma)
 
         # Rotation / flips are stored in a custom [Display] section in our
         # extended INIs; absent keys mean "leave alone". Read them BEFORE

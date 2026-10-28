@@ -22,6 +22,7 @@ class ThorCamConfig:
     emit_rgb: bool = False         # Emit grayscale or RGB
     roi_offset_x: int = 0
     roi_offset_y: int = 0
+    gamma: float = 1.0             # Software display gamma (applied in grab())
 
 class ThorCamera:
     """
@@ -43,7 +44,7 @@ class ThorCamera:
         self._sensor_height = 0
 
         # Software gamma (ThorLabs has no hardware gamma)
-        self._gamma: float = 1.0
+        self._gamma: float = float(cfg.gamma)
 
     @property
     def live_width(self) -> int:
@@ -113,15 +114,26 @@ class ThorCamera:
 
     def reinit_roi(self, width: int, height: int,
                    start_x: int, start_y: int) -> None:
+        """Change the ROI at runtime. start_x/start_y are absolute (as in
+        upstream UEyeCamera.reinit_aoi). BeamBox: clamped to the sensor like
+        _setup_roi, and the camera is re-armed even if the ROI set fails --
+        an unclamped .ini start (352 + 1440 > sensor width) used to raise
+        after disarm() and leave the camera disarmed."""
+        req_w = min(int(width), self._sensor_width)
+        req_h = min(int(height), self._sensor_height)
+        off_x = max(0, min(int(start_x), self._sensor_width - req_w))
+        off_y = max(0, min(int(start_y), self._sensor_height - req_h))
         self._cam.disarm()
-        self._cam.roi = self._cam.roi.__class__(start_x, start_y,
-                                                start_x + width,
-                                                start_y + height)
-        actual = self._cam.roi
-        self._live_width = actual.lower_right_x_pixels - actual.upper_left_x_pixels + 1
-        self._live_height = actual.lower_right_y_pixels - actual.upper_left_y_pixels + 1
-        self._cam.arm(2)
-        self._cam.issue_software_trigger()
+        try:
+            self._cam.roi = self._cam.roi.__class__(off_x, off_y,
+                                                    off_x + req_w,
+                                                    off_y + req_h)
+            actual = self._cam.roi
+            self._live_width = actual.lower_right_x_pixels - actual.upper_left_x_pixels + 1
+            self._live_height = actual.lower_right_y_pixels - actual.upper_left_y_pixels + 1
+        finally:
+            self._cam.arm(2)
+            self._cam.issue_software_trigger()
 
     # ------------------------------------------------------------------
     # Runtime parameter setters
@@ -403,6 +415,9 @@ class ThorCameraThread(QtCore.QThread):
                     frame = self._cam.grab()
                 except Exception as e:
                     self.error.emit(f"Frame grab failed: {e}")
+                    # BeamBox: a grab that fails at once (camera disarmed)
+                    # skipped the throttle below and flooded the log.
+                    time.sleep(0.5)
                     continue
 
                 self.new_frame.emit(frame)
@@ -462,6 +477,12 @@ def load_thorcam_config_from_ini(ini_path: str, **overrides) -> ThorCamConfig:
     kwargs["exposure_us"] = exposure_ms * 1000.0
 
     kwargs["gain"] = _getint("Gain", "Master", 0)
+
+    # Software gamma, written by save_thorcam_settings_to_ini (read the same
+    # way as upstream's load_ueye_config_from_ini).
+    gamma = _getfloat("Parameters", "Gamma", 1.0)
+    if gamma > 0:
+        kwargs["gamma"] = gamma
 
     kwargs.update(overrides)
     return ThorCamConfig(**kwargs)
