@@ -837,6 +837,25 @@ class RasterMainWindow(QtWidgets.QMainWindow):
             self.raster_step_button.setEnabled(False)
             _place(self.raster_step_button, 0, 1)
 
+        # BeamBox: ping-pong toggle. Default from config.py
+        # raster.back_and_forth; a saved settings_defaults.json overrides it
+        # (_apply_user_defaults runs later). Read at every arm by _start_raster.
+        if not hasattr(self, "raster_pingpong_checkbox"):
+            self.raster_pingpong_checkbox = QtWidgets.QCheckBox("Ping-pong")
+            _place(self.raster_pingpong_checkbox, 0, 2)
+        _pp_default = True
+        if _config is not None:
+            _pp_default = bool(getattr(getattr(_config.APP_CONFIG, "raster", None),
+                                       "back_and_forth", True))
+        self.raster_pingpong_checkbox.setChecked(_pp_default)
+        self.raster_pingpong_checkbox.setToolTip(
+            "Checked: each pass runs the pattern forwards then backwards, so the\n"
+            "stages retrace their path (no long jump back to point 0).\n"
+            "One armed cycle is then 2N points: shot h5 point_index runs 0..2N-1,\n"
+            "path_len = 2N, the two end points get 2 x shots in a row.\n"
+            "Unchecked: every pass restarts at point 0; point_index 0..N-1, path_len = N.\n"
+            "Takes effect at the next arm (Auto Raster, Arm, Re-arm, BLACS arm).")
+
         # F2 "go to arbitrary site" controls (select-then-confirm). The spinbox
         # and Ctrl+click only SELECT a path point; the Move button is the sole
         # action that commits the motor move -- selection never moves motors.
@@ -1009,6 +1028,10 @@ class RasterMainWindow(QtWidgets.QMainWindow):
                 _w.setEnabled(not active)
                 _w.setToolTip(_motion_tip)
         self.raster_continuous_checkbox.setEnabled(not active)
+        if hasattr(self, "raster_pingpong_checkbox"):
+            # Same rule as Continuous: changing it mid-run would not change
+            # the armed path, so the box would lie about the h5 indexing.
+            self.raster_pingpong_checkbox.setEnabled(not active)
         # "Delay (s)" only applies to continuous runs -- grey it out in step mode
         # so it's clear it has no effect there.
         if hasattr(self, "sleepTimer"):
@@ -1494,6 +1517,10 @@ class RasterMainWindow(QtWidgets.QMainWindow):
                 "spiral_angle_step_change": _spin("ang_change"),
                 "continuous": (bool(self.raster_continuous_checkbox.isChecked())
                                if hasattr(self, "raster_continuous_checkbox") else None),
+                # BeamBox: ping-pong (config.py raster.back_and_forth is the
+                # default when this key is absent).
+                "back_and_forth": (bool(self.raster_pingpong_checkbox.isChecked())
+                                   if hasattr(self, "raster_pingpong_checkbox") else None),
                 "delay_s": _spin("sleepTimer"),
             },
             "display": {
@@ -1549,6 +1576,8 @@ class RasterMainWindow(QtWidgets.QMainWindow):
                 self.alg_choice.setCurrentIndex(i)
         if hasattr(self, "raster_continuous_checkbox") and pat.get("continuous") is not None:
             self.raster_continuous_checkbox.setChecked(bool(pat["continuous"]))
+        if hasattr(self, "raster_pingpong_checkbox") and pat.get("back_and_forth") is not None:
+            self.raster_pingpong_checkbox.setChecked(bool(pat["back_and_forth"]))
         js = d.get("jog_step", {})
         if hasattr(self, "dx_button") and "x" in js:
             self.dx_button.setValue(float(js["x"]))
@@ -2003,12 +2032,17 @@ class RasterMainWindow(QtWidgets.QMainWindow):
 
         # BeamBox: loop the path instead of stopping at its end, so a long
         # acquisition doesn't need someone watching for the raster to run out
-        # and restarting it. Ping-pong (config.py raster.back_and_forth, see there)
-        # reverses each lap, so the stage retraces rather than making one long
-        # jump back to the start every time.
-        pingpong = True
-        if _config is not None:
-            pingpong = bool(_config.APP_CONFIG.raster.back_and_forth)
+        # and restarting it. Ping-pong (the Run tab checkbox; default and h5
+        # consequences in config.py raster.back_and_forth) reverses each lap,
+        # so the stage retraces rather than making one long jump back to the
+        # start every time. Every arm (local, Re-arm, BLACS) passes here, so
+        # the armed path -- and the h5 point_index/path_len -- follow the box.
+        if hasattr(self, "raster_pingpong_checkbox"):
+            pingpong = bool(self.raster_pingpong_checkbox.isChecked())
+        else:
+            pingpong = True
+            if _config is not None:
+                pingpong = bool(_config.APP_CONFIG.raster.back_and_forth)
         self.controller.start_raster(it, continuous=continuous, log_dir=log_dir, delay_s=(delay_s if continuous else 0.0), source=source,
                                      repeat=True, pingpong=pingpong)
 
@@ -2623,6 +2657,8 @@ class RasterMainWindow(QtWidgets.QMainWindow):
         # lock in the mode choice while active
         if hasattr(self, "raster_continuous_checkbox"):
             self.raster_continuous_checkbox.setEnabled(not active)
+        if hasattr(self, "raster_pingpong_checkbox"):
+            self.raster_pingpong_checkbox.setEnabled(not active)
 
         # Auto Raster + Step enablement is _update_step_mode_ui's alone (called
         # above): it also weighs calibration and remote ownership, which a bare

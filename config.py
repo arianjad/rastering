@@ -131,12 +131,18 @@ class RasterDefaults:
     # direction reversal at an arbitrary point: the stages have backlash).
     # True = the old lab copy's behaviour. False = upstream: every pass
     # restarts at point 0.
-    # Consequence of True: one armed cycle is 2N points for an N-point
+    # This is only the DEFAULT of the "Ping-pong" checkbox in the Run tab's
+    # Raster group. The value that counts is the checkbox at arm time (every
+    # arm, local or BLACS, goes through ui._start_raster). "Save as defaults"
+    # stores it as pattern.back_and_forth in settings_defaults.json, which
+    # overrides this value at the next launch.
+    # Consequence of ping-pong on: one armed cycle is 2N points for an N-point
     # pattern. The shot h5 point_index runs 0..2N-1 and path_len = 2N
     # (site k is visited at index k and at 2N-1-k; target_xy stays exact),
     # so "one pass = path_len x shots_per_step shots" means 2 visits per
     # site, and the two turnaround points get 2 x shots_per_step shots in a
-    # row.
+    # row. Ping-pong off: one cycle is N points, point_index 0..N-1,
+    # path_len = N, one visit per site per pass.
     back_and_forth: bool = True
 
 

@@ -136,3 +136,75 @@ def test_strip_cal_never_raises_when_camera_settings_lookup_errors():
     fake = _strip_self(_get_cal_bundled_camera_settings=boom)
     ui.RasterMainWindow._update_strip_cal(fake)  # must not raise
     fake.status_strip.set_chip.assert_called_once_with("cal", "cal ✓", "good")
+
+
+# ----------------------------------------------------------------------------
+# BeamBox: Ping-pong checkbox (Run tab) -> armed path
+# ----------------------------------------------------------------------------
+
+class _Box:
+    def __init__(self, checked):
+        self._c = bool(checked)
+
+    def isChecked(self):
+        return self._c
+
+    def setChecked(self, v):
+        self._c = bool(v)
+
+
+def _arm_with_pingpong_box(checked):
+    """Run ui._start_raster on a stub; return the controller.start_raster kwargs."""
+    ctl = types.SimpleNamespace(calibration=object(), _raster_active=False,
+                                start_raster=mock.Mock(name="start_raster"))
+    fake = types.SimpleNamespace(
+        controller=ctl, _log=lambda m: None,
+        _build_raster_spec=lambda: types.SimpleNamespace(kind="square_x", hull_points=None),
+        raster_continuous_checkbox=_Box(False),
+        raster_pingpong_checkbox=_Box(checked),
+        _update_step_mode_ui=lambda: None,
+        _clear_overlay_graphics=lambda: None,
+        _refresh_raster_scatter=lambda: None,
+    )
+    with mock.patch.object(ui, "iter_path_from_spec", return_value=iter([(0.0, 0.0)])):
+        ui.RasterMainWindow._start_raster(fake, source="remote")
+    ctl.start_raster.assert_called_once()
+    return ctl.start_raster.call_args.kwargs
+
+
+def test_pingpong_checkbox_decides_the_armed_path():
+    """The Ping-pong box must decide the armed path at every arm (BLACS arms
+    included). If the box said "off" but the arm still ping-ponged, the shot
+    h5 point_index/path_len would index a 2N cycle while the operator reads
+    them as N sites, and shots get assigned to the wrong ablation site."""
+    _require_ui()
+    assert _arm_with_pingpong_box(False)["pingpong"] is False
+    assert _arm_with_pingpong_box(True)["pingpong"] is True
+
+
+def test_pingpong_choice_survives_save_and_relaunch():
+    """"Save as defaults" must store the Ping-pong choice and the next launch
+    must restore it. Otherwise a saved "off" silently comes back "on"
+    (config.py default) and the h5 path_len doubles without anyone noticing."""
+    _require_ui()
+    ctl = types.SimpleNamespace(
+        _read_motor_backlash_xy=lambda timeout_s: (None, None),
+        get_user_home_xy=lambda: (0.0, 0.0))
+    spin = types.SimpleNamespace(value=lambda: 0.1)
+    chk = types.SimpleNamespace(isChecked=lambda: False)
+    src = types.SimpleNamespace(
+        controller=ctl, dx_button=spin, dy_button=spin,
+        point_display_count=types.SimpleNamespace(value=lambda: 10),
+        raster_point_display_count=types.SimpleNamespace(value=lambda: 10),
+        show_all_points_checkbox=chk, show_all_raster_points_checkbox=chk,
+        show_current_marker_checkbox=chk, show_direction_checkbox=chk,
+        raster_pingpong_checkbox=_Box(False),
+    )
+    saved = ui.RasterMainWindow._gather_user_defaults(src)
+    assert saved["pattern"]["back_and_forth"] is False
+
+    dst = types.SimpleNamespace(raster_pingpong_checkbox=_Box(True),
+                                controller=types.SimpleNamespace(set_user_home_xy=lambda x, y: None))
+    with mock.patch.object(ui, "load_user_defaults", return_value=saved):
+        ui.RasterMainWindow._apply_user_defaults(dst)
+    assert dst.raster_pingpong_checkbox.isChecked() is False

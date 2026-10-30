@@ -107,6 +107,16 @@
        </widget>
       </item>
             <item row="2" column="0" colspan="3">
+           <widget class="QCheckBox" name="raster_pingpong_checkbox">
+            <property name="text">
+             <string>Ping-pong</string>
+            </property>
+            <property name="checked">
+             <bool>true</bool>
+            </property>
+           </widget>
+          </item>
+            <item row="3" column="0" colspan="3">
            <widget class="QCheckBox" name="checkBox_2">
             <property name="text">
              <string>Save position history</string>
