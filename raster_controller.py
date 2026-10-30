@@ -31,15 +31,9 @@ from PyQt5.QtCore import QObject, pyqtSignal, pyqtSlot, QTimer
 
 from raster_paths import collect_points
 
-# zmq_v2 protocol foundation lives in the parent labscript-suite repo.
-# This GUI runs in conda env `rastering`; inject the path.
-_EXTERNAL_LIB = os.path.normpath(os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    '..', '..', 'userlib', 'external_gui_lib',
-))
-if _EXTERNAL_LIB not in sys.path:
-    sys.path.insert(0, _EXTERNAL_LIB)
-from zmq_v2 import (
+# zmq_v2 (RaX RemoteControl protocol v2) comes from the beambox-daq package bbx_zmq.
+# Install once into this GUI's Python:  python -m pip install -e <beambox-daq> --no-deps
+from bbx_zmq.zmq_v2 import (
     RemoteControlServerBase, handler, encode_reply,
     PROTOCOL_VERSION, ZmqRepTransport,
 )

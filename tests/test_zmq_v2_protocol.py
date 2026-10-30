@@ -53,8 +53,8 @@ def _require_rc():
 @pytest.fixture(scope="module")
 def zmq_v2():
     _require_rc()
-    pytest.importorskip("zmq_v2")
-    import zmq_v2  # noqa: PLC0415
+    pytest.importorskip("bbx_zmq.zmq_v2")
+    from bbx_zmq import zmq_v2  # noqa: PLC0415
     return zmq_v2
 
 
