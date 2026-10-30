@@ -326,6 +326,21 @@ def test_pingpong_pattern_len_is_the_drawn_pattern():
     assert SystemController.armed_pattern_len(sc) == 3
 
 
+def test_pattern_len_counts_points_the_travel_filter_dropped():
+    """The on-screen pattern is unfiltered, so the armed pattern length must
+    count points the motor-travel filter dropped. Counting only the kept
+    points raised "pending -- press Re-arm" after every such arm, and a
+    Re-arm restarts a BLACS raster at point 0 mid-queue, sending the stage
+    to a site out of order."""
+    sc = _start_self(motor_bounds=(0.0, 12.0, 0.0, 12.0))
+    path = [(-5.0, 5.0), (1.0, 1.0), (99.0, 5.0), (2.0, 2.0)]
+    SystemController.start_raster(sc, path, continuous=False,
+                                  repeat=True, pingpong=True)
+    assert SystemController.armed_path_points(sc) == [
+        (1.0, 1.0), (2.0, 2.0), (2.0, 2.0), (1.0, 1.0)]
+    assert SystemController.armed_pattern_len(sc) == 4
+
+
 # ----------------------------------------------------------------------------
 # Arm-time motor reachability filter (2026-08-07 convex-hull incident)
 #

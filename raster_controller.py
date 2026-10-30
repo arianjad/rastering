@@ -881,10 +881,10 @@ class SystemController(QObject):
         self._raster_continuous: bool = False
         # BeamBox: continuous run wraps instead of finishing (start_raster repeat=True).
         self._raster_repeat: bool = False
-        # BeamBox: points in the pattern as drawn (after the motor-travel
-        # filter), before repeat / ping-pong expansion. The UI compares the
-        # on-screen pattern with THIS, not with the armed path, which ping-pong
-        # doubles (2N points for an N-point pattern).
+        # BeamBox: points in the pattern as drawn, i.e. BEFORE the
+        # motor-travel filter and before repeat / ping-pong expansion. The UI
+        # compares the on-screen (unfiltered) pattern with THIS, not with the
+        # armed path, which the filter shortens and ping-pong doubles.
         self._raster_pattern_len: int = 0
         # None while no raster is active; "local" / "remote" otherwise.
         self._raster_source: Optional[str] = None
@@ -1506,7 +1506,11 @@ class SystemController(QObject):
         # `== 1`: in Python True == 1, so a `repeat != 1` guard silently skips
         # looping when repeat is True.
         forever = repeat is True
-        pattern_len = len(pts)
+        # Count as drawn: the travel filter's drops included (BBX-173 R2-3).
+        # The on-screen preview is unfiltered, so the post-filter count made
+        # the UI say "pending -- press Re-arm" after every arm that dropped
+        # a point, and each Re-arm restarts a BLACS raster at point 0.
+        pattern_len = len(pts) + dropped
         try:
             laps = 1 if forever else max(1, int(repeat))
         except (TypeError, ValueError):
@@ -1702,9 +1706,11 @@ class SystemController(QObject):
             return list(self._raster_path_pts)
 
     def armed_pattern_len(self) -> int:
-        """BeamBox: points in the armed pattern as drawn, before ping-pong /
-        repeat expansion (0 when nothing is armed). Compare the on-screen
-        pattern with this; armed_path_points() is 2N long with ping-pong."""
+        """BeamBox: points in the armed pattern as drawn, before the
+        motor-travel filter and before ping-pong / repeat expansion (0 when
+        nothing is armed). Compare the on-screen pattern with this;
+        armed_path_points() is shorter by the dropped points and 2x long with
+        ping-pong."""
         with self._state_lock:
             return self._raster_pattern_len
 
