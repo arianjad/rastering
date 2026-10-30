@@ -20,6 +20,9 @@ class ThorCamConfig:
     gain: int = 0                  # 0 = minimum gain
     max_fps: float = 15.0          # Soft throttle for the grab loop
     emit_rgb: bool = False         # Emit grayscale or RGB
+    # ROI upper-left corner, ABSOLUTE sensor pixels (= ini [Image size]
+    # Start X / Start Y, = the dock's Start X/Y, = what Save writes back).
+    # Same meaning at open and on Load/Revert; clamped to the sensor.
     roi_offset_x: int = 0
     roi_offset_y: int = 0
     gamma: float = 1.0             # Software display gamma (applied in grab())
@@ -92,19 +95,24 @@ class ThorCamera:
     # ROI helpers
     # ------------------------------------------------------------------
 
-    def _setup_roi(self, width: int, height: int,
-                   offset_x: int = 0, offset_y: int = 0) -> None:
+    def _clamped_roi(self, width: int, height: int,
+                     start_x: int, start_y: int):
+        """(off_x, off_y, req_w, req_h): size cut to the sensor, absolute
+        start clamped so the ROI stays on the sensor."""
         req_w = min(int(width), self._sensor_width)
         req_h = min(int(height), self._sensor_height)
+        off_x = max(0, min(int(start_x), self._sensor_width - req_w))
+        off_y = max(0, min(int(start_y), self._sensor_height - req_h))
+        return off_x, off_y, req_w, req_h
 
-        # Center + offset
-        off_x = (self._sensor_width - req_w) // 2 - int(offset_x)
-        off_y = (self._sensor_height - req_h) // 2 - int(offset_y)
-
-        # Clamp
-        off_x = max(0, min(off_x, self._sensor_width - req_w))
-        off_y = max(0, min(off_y, self._sensor_height - req_h))
-
+    def _setup_roi(self, width: int, height: int,
+                   start_x: int = 0, start_y: int = 0) -> None:
+        """ROI at open. BeamBox (BBX-173 R2-4): start_x/start_y are the
+        absolute sensor start, as in reinit_roi (Load/Revert). Upstream read
+        them here as an offset from the centred ROI, so a 640 px ROI saved
+        at Start X = 100 reopened at x = 300 but reloaded at x = 100."""
+        off_x, off_y, req_w, req_h = self._clamped_roi(width, height,
+                                                       start_x, start_y)
         self._cam.roi = self._cam.roi.__class__(off_x, off_y,
                                                 off_x + req_w,
                                                 off_y + req_h)
@@ -119,10 +127,8 @@ class ThorCamera:
         _setup_roi, and the camera is re-armed even if the ROI set fails --
         an unclamped .ini start (352 + 1440 > sensor width) used to raise
         after disarm() and leave the camera disarmed."""
-        req_w = min(int(width), self._sensor_width)
-        req_h = min(int(height), self._sensor_height)
-        off_x = max(0, min(int(start_x), self._sensor_width - req_w))
-        off_y = max(0, min(int(start_y), self._sensor_height - req_h))
+        off_x, off_y, req_w, req_h = self._clamped_roi(width, height,
+                                                       start_x, start_y)
         self._cam.disarm()
         try:
             self._cam.roi = self._cam.roi.__class__(off_x, off_y,

@@ -100,10 +100,12 @@ class CameraConfig:
     # Requested AOI / output size (camera.py can honor these depending on your setup)
     width: int = 1440
     height: int = 1080
-    # Add offsets to shift the AOI from the center (pixels)
-    # Swapped x,y or inverted +/- if you rotate or flip the image in the UI
+    # BeamBox (Zelux): AOI upper-left corner, ABSOLUTE sensor pixels, the
+    # same meaning as the ini Start X/Y (clamped to the sensor). Used only
+    # when no camera ini loads. Was -100 as a centre offset; with the full
+    # 1440x1080 frame both meanings give start (0, 0).
     roi_offset_x: int = 0
-    roi_offset_y: int = -100
+    roi_offset_y: int = 0
 
     # Capture strategy + channel order
     use_freeze: bool = True   # use FreezeVideo loop
