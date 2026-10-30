@@ -485,8 +485,13 @@ def load_thorcam_config_from_ini(ini_path: str, **overrides) -> ThorCamConfig:
     kwargs["gain"] = _getint("Gain", "Master", 0)
 
     # Software gamma, written by save_thorcam_settings_to_ini (read the same
-    # way as upstream's load_ueye_config_from_ini).
-    gamma = _getfloat("Parameters", "Gamma", 1.0)
+    # way as upstream's load_ueye_config_from_ini). A non-numeric value falls
+    # back to 1.0 (BBX-173 R2-6): gamma is display only, and raising here
+    # threw away the whole ini (startup then used config.py's ROI/exposure).
+    try:
+        gamma = _getfloat("Parameters", "Gamma", 1.0)
+    except ValueError:
+        gamma = 1.0
     if gamma > 0:
         kwargs["gamma"] = gamma
 

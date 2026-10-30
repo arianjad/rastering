@@ -70,3 +70,19 @@ def test_saved_subframe_roi_reopens_where_it_was_saved(tmp_path):
     cam.reinit_roi(cfg.width, cfg.height, cfg.roi_offset_x, cfg.roi_offset_y)
     assert _roi_start(cam) == (100, 50)
 
+
+def test_non_numeric_gamma_keeps_the_rest_of_the_ini(tmp_path):
+    """A non-numeric Gamma used to raise ValueError and throw away the whole
+    ini: startup then fell back to config.py's camera values, so the ROI and
+    exposure silently changed. Gamma (display only) falls back to 1.0."""
+    ini = str(tmp_path / "cam.ini")
+    ct.save_thorcam_settings_to_ini(ini, {"aoi_width": 640, "aoi_height": 480,
+                                          "aoi_x": 100, "aoi_y": 50,
+                                          "exposure": 12.5, "gain": 7})
+    with open(ini, encoding="utf-8") as f:
+        txt = f.read().replace("gamma = 1.000000", "gamma = abc")
+    with open(ini, "w", encoding="utf-8") as f:
+        f.write(txt)
+    cfg = ct.load_thorcam_config_from_ini(ini)
+    assert cfg.gamma == 1.0
+    assert (cfg.width, cfg.roi_offset_x, cfg.exposure_us, cfg.gain) == (640, 100, 12500.0, 7)
