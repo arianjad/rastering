@@ -145,6 +145,10 @@ class CommandType(Enum):
     NOOP = auto()
 
 
+# MotorResult.message when a caller stopped waiting: the command stays queued and still runs.
+WAIT_TIMEOUT = "timeout waiting for result"
+
+
 @dataclass
 class MotorResult:
     ok: bool
@@ -363,6 +367,9 @@ class RasterMenuLink:
                          and finished = True when the path had run to its end and this step
                          started it again at point 0 (the path loops). Refused unless the raster
                          is armed for BLACS ("not_armed").
+    A move or next point the stage does not finish within the menu's time limit answers
+    "gui_busy": the move stays queued and still runs (after a late next point that point gets no
+    shot).
     """
 
     def __init__(self, controller):
@@ -408,8 +415,12 @@ class RasterMenuLink:
                 raise Refused(code, f"{holder}, so a move to x, y would leave its path: stop the raster "
                                     "with the GUI's Stop button first, or take Raster_X / Raster_Y out "
                                     "of the sequence")
+            limit = MENU.value("xy").set_s
             res = c.request_move_target(float(value[0]), float(value[1]), source="zmq", wait=True,
-                                        timeout_s=MENU.value("xy").set_s)
+                                        timeout_s=limit)
+            if res is not None and res.message == WAIT_TIMEOUT:
+                raise Refused("gui_busy", f"the stage did not finish the move to x, y within {limit:g} s; "
+                                          "the move is still queued and will run")
             if res is None or not res.ok:
                 raise Refused("move_refused", res.message if res is not None else "motor move failed")
             return [float(v) for v in res.target_xy]
@@ -473,7 +484,12 @@ class RasterMenuLink:
             raise Refused("not_armed", f"no raster armed for BLACS (raster state: {state})")
         with c._state_lock:
             wraps = c._raster_index >= len(c._raster_path_pts)
-        res = c.raster_step(source="zmq", wait=True, timeout_s=MENU.button("next_point").press_s)
+        limit = MENU.button("next_point").press_s
+        res = c.raster_step(source="zmq", wait=True, timeout_s=limit)
+        if res is not None and res.message == WAIT_TIMEOUT:
+            raise Refused("gui_busy", f"the stage did not reach the next point within {limit:g} s; the "
+                                      "move is still queued and will run, and that point gets no shot "
+                                      "(the next shot's next point steps past it)")
         if res is None:
             raise Refused("not_armed", f"next point not taken (raster state: {self.raster_state()})")
         if not res.ok:
@@ -1705,7 +1721,7 @@ class SystemController(QObject):
             try:
                 return reply_q.get(timeout=float(timeout_s))
             except queue.Empty:
-                return MotorResult(ok=False, message="timeout waiting for result", cmd_id=cmd_id)
+                return MotorResult(ok=False, message=WAIT_TIMEOUT, cmd_id=cmd_id)
 
         # GUI thread: poll the queue in short slices, processing non-input
         # events between polls. 20 ms poll + 30 ms processEvents budget gives
@@ -1719,7 +1735,7 @@ class SystemController(QObject):
             except queue.Empty:
                 app.processEvents(QEventLoop.ExcludeUserInputEvents, process_budget_ms)
                 if time.monotonic() >= deadline:
-                    return MotorResult(ok=False, message="timeout waiting for result", cmd_id=cmd_id)
+                    return MotorResult(ok=False, message=WAIT_TIMEOUT, cmd_id=cmd_id)
 
     def _enqueue(self, cmd: MotorCommand) -> None:
         # next(self._q_seq) -- not created_ts -- is the tiebreaker: created_ts

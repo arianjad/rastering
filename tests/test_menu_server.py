@@ -223,6 +223,57 @@ def test_a_move_without_a_calibration_or_out_of_the_menus_range_moves_nothing(ap
         g.close()
 
 
+@pytest.mark.parametrize("what", ["move", "next_point"])
+def test_a_move_that_takes_too_long_says_it_is_still_queued_and_will_run(app, monkeypatch, what):
+    """Harm stopped: a move or next point the stage does not finish within the menu's time limit
+    reaches BLACS as "refused", so people think the stage stayed where it was, but the queued move
+    runs a moment later (the spot moves under the next shot); after a late next point nobody knows
+    that point got no shot. The answer has its own code (gui_busy), says the move is still queued
+    and will run (for next point: that point gets no shot), and the stage does move once free."""
+    import dataclasses
+    import time
+
+    import raster_controller as rc
+    from bbx_zmq import Refused
+    short = dataclasses.replace(
+        rc.MENU, values=tuple(dataclasses.replace(v, set_s=0.2) if v.name == "xy" else v for v in rc.MENU.values),
+        buttons=tuple(dataclasses.replace(b, press_s=0.2) if b.name == "next_point" else b
+                      for b in rc.MENU.buttons))
+    monkeypatch.setattr(rc, "MENU", short)                     # 0.2 s limits, so the test is quick
+    gate = threading.Event()
+
+    class StuckStage(FakeStage):
+        """A Z912 axis that does not finish its move until the test lets it."""
+        def move_to(self, pos, *, timeout_s=10.0):
+            gate.wait(5)
+            return super().move_to(pos, timeout_s=timeout_s)
+
+    g = Gui(stage=StuckStage)
+    try:
+        g.client.hello()
+        if what == "move":
+            with pytest.raises(Refused) as e:
+                g.client.set("xy", [500.0, 600.0])
+            words = "the stage did not finish the move to x, y within 0.2 s; the move is still queued and will run"
+            want = 5.0
+        else:
+            g.client.press("arm")
+            with pytest.raises(Refused) as e:
+                g.client.press("next_point")
+            words = ("the stage did not reach the next point within 0.2 s; the move is still queued and "
+                     "will run, and that point gets no shot (the next shot's next point steps past it)")
+            want = 1.0                                             # PATH[0]: 100 px -> 1.0 mm
+        assert (e.value.code, e.value.words) == ("gui_busy", words)
+        gate.set()                                                 # the stage is free again
+        t0 = time.monotonic()
+        while not g.x.moves and time.monotonic() - t0 < 2:
+            time.sleep(0.01)
+        assert g.x.moves == [pytest.approx(want)]
+    finally:
+        gate.set()
+        g.close()
+
+
 def test_shots_per_step_is_held_by_the_gui_and_reported(gui):
     """Harm stopped: shots per step set in the BLACS tab is not what the GUI shows (the operator
     reads one number, BLACS steps by another), or a non-whole or zero count reaches the GUI.
