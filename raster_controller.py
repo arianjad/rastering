@@ -35,7 +35,7 @@ from raster_paths import collect_points
 # (or put <beambox-daq>\src first on PYTHONPATH). The rastering menu, the same file BLACS loads:
 # bbx_zmq/menus/rastering.py (names, ranges, buttons, time limits, port).
 from bbx_zmq import MenuServer, Refused, ZmqRepTransport
-from bbx_zmq.menus.rastering import MENU
+from bbx_zmq.menus.rastering import ARMED, LOCAL, MENU, OFF, RUNNING
 
 
 # -----------------------------
@@ -367,10 +367,10 @@ class RasterMenuLink:
         c = self.c
         with c._state_lock:
             if not c._raster_active:
-                return "off"
+                return OFF
             if c._raster_continuous:
-                return "running"
-            return "armed" if c._raster_source == "remote" else "local"
+                return RUNNING
+            return ARMED if c._raster_source == "remote" else LOCAL
 
     def read_all(self) -> Dict[str, Any]:
         c = self.c
@@ -392,7 +392,7 @@ class RasterMenuLink:
             if c.calibration is None:
                 raise Refused("not_calibrated", "no calibration set: calibrate in the GUI first "
                                                 "(x, y are camera pixels)")
-            if self.raster_state() == "armed":
+            if self.raster_state() == ARMED:
                 raise Refused("raster_armed", "the raster is armed for BLACS, so a move to x, y would "
                                               "leave its path: disarm it (BLACS tab or the GUI), or take "
                                               "Raster_X / Raster_Y out of the sequence")
@@ -414,9 +414,9 @@ class RasterMenuLink:
         if name == "arm":
             return self._arm()
         if name == "disarm":
-            if self.raster_state() == "running":
+            if self.raster_state() == RUNNING:
                 raise Refused("raster_running", "a continuous raster runs from the GUI; stop it there")
-            was = self.raster_state() == "armed"
+            was = self.raster_state() == ARMED
             if self.c.take_local_control() and was:
                 self.c.status_signal.emit("BLACS released the raster; local control.")
             return {"was_armed": was}
@@ -427,11 +427,11 @@ class RasterMenuLink:
     def _arm(self):
         c = self.c
         state = self.raster_state()
-        if state == "running":
+        if state == RUNNING:
             raise Refused("raster_running", "a continuous raster runs from the GUI; stop it there")
-        if state == "local":
+        if state == LOCAL:
             c.give_remote_control()
-        elif state == "off":
+        elif state == OFF:
             provider = getattr(c, "remote_arm_provider", None)
             if provider is None:
                 raise Refused("no_raster_configured", "no GUI panel attached to arm a raster from")
@@ -457,7 +457,7 @@ class RasterMenuLink:
     def _next_point(self):
         c = self.c
         state = self.raster_state()
-        if state != "armed":
+        if state != ARMED:
             raise Refused("not_armed", f"no raster armed for BLACS (raster state: {state})")
         with c._state_lock:
             wraps = c._raster_index >= len(c._raster_path_pts)
