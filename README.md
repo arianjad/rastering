@@ -43,7 +43,7 @@ Path preview is fully interactive and overlays on the live camera feed.
 - Automatic timestamped filenames.
 
 ### BLACS link (BeamBox, BBX-190)
-- A menu server on port 55535 (`raster_controller.py` `RasterMenuLink`): BLACS reads every
+- A menu server on the rastering menu's port (beambox-daq `bbx_zmq/menus/rastering.py`; `raster_controller.py` `RasterMenuLink`): BLACS reads every
   value in one snapshot, moves the spot to an x, y point, sets shots per step, and presses
   arm / disarm / next point. The menu (names, ranges, time limits) is beambox-daq
   `bbx_zmq/menus/rastering.py`, the same file BLACS loads.

@@ -33,7 +33,7 @@ from raster_paths import collect_points
 # The menu link to BLACS comes from the beambox-daq package bbx_zmq (BBX-190).
 # Install once into this GUI's Python:  python -m pip install -e <beambox-daq> --no-deps
 # (or put <beambox-daq>\src first on PYTHONPATH). The rastering menu, the same file BLACS loads:
-# bbx_zmq/menus/rastering.py (names, ranges, buttons, time limits, port 55535).
+# bbx_zmq/menus/rastering.py (names, ranges, buttons, time limits, port).
 from bbx_zmq import MenuServer, Refused, ZmqRepTransport
 from bbx_zmq.menus.rastering import MENU
 
@@ -1620,7 +1620,7 @@ class SystemController(QObject):
     # --- BLACS link: the menu server (BBX-190) ---
 
     def start_menu_server(self) -> None:
-        """Serve BLACS on the rastering menu's port (REP, tcp://*:55535; bbx_zmq/menus/rastering.py)
+        """Serve BLACS on the rastering menu's port (REP, tcp://*:<MENU.port>; bbx_zmq/menus/rastering.py)
         from a daemon thread. The handlers: RasterMenuLink."""
         if self._menu_thread and self._menu_thread.is_alive():
             self.status_signal.emit("BLACS link already running.")

@@ -61,7 +61,7 @@ class TelemetryConfig:
 
 @dataclass(frozen=True)
 class NetworkConfig:
-    # Serve BLACS (the menu link, BBX-190) on the rastering menu's port, 55535
+    # Serve BLACS (the menu link, BBX-190) on the rastering menu's port
     # (beambox-daq bbx_zmq/menus/rastering.py). False: the GUI runs without BLACS.
     blacs_link: bool = True
 

@@ -24,7 +24,7 @@ Laser ablation rastering control: Thorlabs Z912 motors, IDS uEye camera, pattern
 
 ## BLACS Integration
 
-BeamBox (BBX-190): BLACS talks to this GUI through the **menu link** of beambox-daq `bbx_zmq`. One request port, 55535, no live stream (the PUB socket on 55536 is gone): BLACS asks for a snapshot about every 2 s.
+BeamBox (BBX-190): BLACS talks to this GUI through the **menu link** of beambox-daq `bbx_zmq`. One request port, the menu's (its number is written in `bbx_zmq/menus/rastering.py` only), no live stream (the old PUB socket is gone): BLACS asks for a snapshot about every 2 s.
 
 - The menu, the same file BLACS loads: beambox-daq `src/bbx_zmq/menus/rastering.py` (values `xy`, `shots_per_step`, `x`, `y`, `raster_state`, `point_index`, `path_len`; buttons `arm`, `disarm`, `next_point`; time limits; port). Change names or ranges there, for both sides at once, and raise its version.
 - `raster_controller.py`: `RasterMenuLink` holds the handlers; `bbx_zmq.MenuServer` checks every request against the menu first (not on the menu, out of range: refused before a handler runs). `SystemController.start_menu_server()` serves it from a thread (`config.py` `network.blacs_link`).
