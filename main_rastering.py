@@ -50,12 +50,9 @@ def build_controller():
         telemetry_period_s=config.APP_CONFIG.telemetry.period_s,
     )
 
-    # optional: auto-start ZMQ
-    if config.APP_CONFIG.network.zmq_bind:
-        ctl.start_zmq_server(
-            config.APP_CONFIG.network.zmq_bind,
-            pub_bind=getattr(config.APP_CONFIG.network, 'pub_bind', ''),
-        )
+    # BLACS link: the menu server (BBX-190)
+    if config.APP_CONFIG.network.blacs_link:
+        ctl.start_menu_server()
 
     return ctl
 

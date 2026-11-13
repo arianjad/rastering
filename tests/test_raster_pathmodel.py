@@ -192,20 +192,6 @@ def test_step_wraps_to_path_start_for_any_source():
         assert cmd.payload["target_xy"] == (1.0, 2.0)
 
 
-def test_raster_progress_text_never_exceeds_its_total_across_wraps():
-    """The BLACS tab prints this string verbatim, so a numerator that keeps
-    climbing past the total reads "37/12" once wrapping starts. Deriving it
-    from the cursor makes it restart with every pass."""
-    pts = [(1.0, 2.0), (3.0, 4.0), (5.0, 6.0)]
-    sc = _step_self(pts)
-    sc._raster_total_steps = len(pts)
-    seen = []
-    for _ in range(2 * len(pts) + 1):
-        SystemController.raster_step(sc, source="zmq", wait=False)
-        seen.append(SystemController._raster_progress_text(sc))
-    assert seen == ["1/3", "2/3", "3/3", "1/3", "2/3", "3/3", "1/3"]
-
-
 def test_zmq_step_on_empty_path_still_finishes():
     """wrap=True must never spin on an empty path: no point, no move,
     finish as before."""
@@ -555,8 +541,8 @@ def test_give_remote_control_converts_continuous_run_and_keeps_the_cursor():
     cursor stays put, so BLACS resumes mid-path instead of at point 0. The
     operator is told, because a run they started just stopped stepping itself.
 
-    The mirror rule is pinned in test_zmq_v2_protocol: the REMOTE side may never
-    make this conversion (arm_raster refuses it)."""
+    The mirror rule is pinned in test_menu_server: the REMOTE side may never
+    make this conversion (BLACS's arm is refused while a continuous run goes)."""
     # (cursor, what the status line must promise). The second case pins the
     # modulo: at the end of a pass the cursor sits at n, and a plain i+1 would
     # promise an off-the-end "4/3" -- raster_step wraps, so point 1 is what

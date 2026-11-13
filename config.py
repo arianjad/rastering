@@ -61,10 +61,9 @@ class TelemetryConfig:
 
 @dataclass(frozen=True)
 class NetworkConfig:
-    # ZMQ bind endpoint (set to "" or None to disable auto-start)
-    zmq_bind: str = "tcp://*:55535"
-    # PUB-SUB bind endpoint for broadcasting status to BLACS (set to "" to disable)
-    pub_bind: str = "tcp://*:55536"
+    # Serve BLACS (the menu link, BBX-190) on the rastering menu's port, 55535
+    # (beambox-daq bbx_zmq/menus/rastering.py). False: the GUI runs without BLACS.
+    blacs_link: bool = True
 
 
 @dataclass(frozen=True)
@@ -177,7 +176,6 @@ SERIAL_X = APP_CONFIG.hardware.serial_x
 SERIAL_Y = APP_CONFIG.hardware.serial_y
 
 CALIBRATION_PATH = APP_CONFIG.paths.calibration_path
-ZMQ_BIND = APP_CONFIG.network.zmq_bind
 TELEMETRY_PERIOD_S = APP_CONFIG.telemetry.period_s
 
 DEFAULT_TARGET_BOUNDS = APP_CONFIG.raster.target_bounds
