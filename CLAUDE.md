@@ -4,10 +4,13 @@ Laser ablation rastering control: Thorlabs Z912 motors, IDS uEye camera, pattern
 
 ## Python Environment
 
-- This GUI uses conda env **`rastering`**, NOT `labscript`:
+- On the BeamBox PC (MITBeamBox): the system Python, `py -3.13` (PyQt5, pyzmq, pytest). Its
+  `bbx_zmq` is an editable install of beambox-daq `src`; put another checkout's `src` first on
+  `PYTHONPATH` to test against it.
+- On the RaX PC this GUI used conda env **`rastering`**, NOT `labscript`:
   `source ~/miniconda/etc/profile.d/conda.sh && conda activate rastering`
 - **Run:** `python main_rastering.py` (from this directory)
-- **Tests:** `pytest tests/test_raster_pathmodel.py tests/test_zmq_v2_protocol.py tests/test_raster_gui_ui_structure.py tests/test_status_strip.py` are ALL camera-safe (pure controller/protocol/UI-structure logic, no `ui.py` import; run ALL before any commit). `test_command_queue.py` and `test_raster_goto_handlers.py` import `ui.py` → open the uEye camera → **HANG when the GUI/camera is busy** — never run them (or the whole `tests/` dir) while the rastering GUI runs. Use `python -m py_compile` for syntax. Tests are standalone-runnable.
+- **Tests:** `pytest tests/test_raster_pathmodel.py tests/test_menu_server.py tests/test_raster_gui_ui_structure.py tests/test_status_strip.py` are ALL camera-safe (pure controller/menu-server/UI-structure logic, no `ui.py` import; run ALL before any commit). With `QT_QPA_PLATFORM=offscreen`. `test_command_queue.py` and `test_raster_goto_handlers.py` import `ui.py` → open the uEye camera → **HANG when the GUI/camera is busy** — never run them (or the whole `tests/` dir) while the rastering GUI runs. Use `python -m py_compile` for syntax. Tests are standalone-runnable.
 
 ## Simulation Mode (no motors)
 
@@ -21,25 +24,18 @@ Laser ablation rastering control: Thorlabs Z912 motors, IDS uEye camera, pattern
 
 ## BLACS Integration
 
-This GUI is integrated into the BLACS experiment control system (labscript-suite). The ZMQ server in `raster_controller.py:_zmq_loop()` speaks the **v2 RemoteControl protocol** (2026-05-23 cutover).
+BeamBox (BBX-190): BLACS talks to this GUI through the **menu link** of beambox-daq `bbx_zmq`. One request port, 55535, no live stream (the PUB socket on 55536 is gone): BLACS asks for a snapshot about every 2 s.
 
-Module-level `_RasteringV2Server(RemoteControlServerBase)` (imported from parent's `userlib/external_gui_lib/zmq_v2.py`) handles REQ-REP dispatch via `@handler`-decorated methods. PUB-SUB stays raw `zmq.PUB` (topics already match spec §4.1 `{conn}_monitor`). Special cases:
-
-- `move_to_next` iterator-end was non-spec v1 `"FINISHED"`; now SUCCESS + `extra.finished=True` (spec §1.3 fixes 5-token enum). BLACS-side `RasteringWorker.transition_to_buffered` checks `response.get("finished") is True`.
-- `arm_raster` returns SUCCESS + `extra.mode={"continuous","step"}`.
-- `timeout_sec` lives in v2 `args` dict (Q2). Defaults to 10s.
-
-- **BLACS device code**: `C:\Users\radmo\labscript-suite\userlib\user_devices\RasteringDevice\`
-- **Full integration docs**: see `BLACS_Integration_Notes.md` in that directory
-- **Canonical v2 protocol spec**: `C:\Users\radmo\labscript-suite\docs\remotecontrol-zmq-protocol-v2.md` (on master since the 2026-07-30 cutover)
-- **DEPRECATED v1 contract**: `C:\Users\radmo\labscript-suite\userlib\user_devices\BLACS_COMMUNICATION_CONTRACT.md` (archaeological only; v2 servers refuse v1 envelopes per Q4 hard sunset)
-- **BLACS agent**: `amo-expert` in `C:\Users\radmo\labscript-suite\.claude\agents\`
-
-**If changing ZMQ connection names or PUB-SUB topics**, the BLACS device must also be updated. See the BLACS Integration section in the `ablation-tech` agent prompt for the full list of shared connection names.
+- The menu, the same file BLACS loads: beambox-daq `src/bbx_zmq/menus/rastering.py` (values `xy`, `shots_per_step`, `x`, `y`, `raster_state`, `point_index`, `path_len`; buttons `arm`, `disarm`, `next_point`; time limits; port). Change names or ranges there, for both sides at once, and raise its version.
+- `raster_controller.py`: `RasterMenuLink` holds the handlers; `bbx_zmq.MenuServer` checks every request against the menu first (not on the menu, out of range: refused before a handler runs). `SystemController.start_menu_server()` serves it from a thread (`config.py` `network.blacs_link`).
+- This GUI is the one guard for the stage: a move outside the motor travel is refused with its own words (`out_of_bounds_message`); a move without a calibration is refused.
+- `next_point` answers the point's details (index, path length, x, y, frame, calibration) and `finished = True` on the step that ran past the path end and started it again at point 0 (the path loops). It is refused unless `raster_state` is `armed` (armed for BLACS).
+- An arm from scratch goes through the Run tab (`ui.py` `_on_remote_arm_requested`, via `remote_arm_provider`).
+- BLACS side: beambox-daq `src/bbx_devices/RasteringDevice/` (presses next point at shot start while armed; writes the point into the shot file).
 
 ## Key Files
 
-- `raster_controller.py` — Central controller: motor commands, raster state machine, ZMQ server
+- `raster_controller.py` — Central controller: motor commands, raster state machine, BLACS menu server
 - `ui.py` — PyQt5 GUI (no ZMQ, no hardware direct calls)
 - `config.py` — All configuration (ports, hardware serials, camera params)
 - `hardware.py` — Thorlabs Kinesis motor interface

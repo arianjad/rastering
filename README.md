@@ -42,10 +42,12 @@ Path preview is fully interactive and overlays on the live camera feed.
 - JSON format for easy data analysis.
 - Automatic timestamped filenames.
 
-### ZMQ Server Integration
-- Remote control over TCP with JSON commands.
-- Actions supported: move motors, start/stop rastering, query position.
-- Easily scriptable from other software.
+### BLACS link (BeamBox, BBX-190)
+- A menu server on port 55535 (`raster_controller.py` `RasterMenuLink`): BLACS reads every
+  value in one snapshot, moves the spot to an x, y point, sets shots per step, and presses
+  arm / disarm / next point. The menu (names, ranges, time limits) is beambox-daq
+  `bbx_zmq/menus/rastering.py`, the same file BLACS loads.
+- The GUI is the one guard for the stage: a point outside the motor travel is refused.
 
 ---
 
