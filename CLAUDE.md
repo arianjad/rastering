@@ -28,7 +28,7 @@ BeamBox (BBX-190): BLACS talks to this GUI through the **menu link** of beambox-
 
 - The menu, the same file BLACS loads: beambox-daq `src/bbx_zmq/menus/rastering.py` (values `xy`, `shots_per_step`, `x`, `y`, `raster_state`, `point_index`, `path_len`; buttons `arm`, `disarm`, `next_point`; time limits; port). Change names or ranges there, for both sides at once, and raise its version.
 - `raster_controller.py`: `RasterMenuLink` holds the handlers; `bbx_zmq.MenuServer` checks every request against the menu first (not on the menu, out of range: refused before a handler runs). `SystemController.start_menu_server()` serves it from a thread (`config.py` `network.blacs_link`).
-- This GUI is the one guard for the stage: a move outside the motor travel is refused with its own words (`out_of_bounds_message`); a move without a calibration is refused.
+- This GUI is the one guard for the stage: a move outside the motor travel is refused with its own words (`out_of_bounds_message`); a move without a calibration is refused; a move (`xy`, from a sequence's Raster_X / Raster_Y or the BLACS tab) while the raster is armed for BLACS is refused (`raster_armed`).
 - `next_point` answers the point's details (index, path length, x, y, frame, calibration) and `finished = True` on the step that ran past the path end and started it again at point 0 (the path loops). It is refused unless `raster_state` is `armed` (armed for BLACS).
 - An arm from scratch goes through the Run tab (`ui.py` `_on_remote_arm_requested`, via `remote_arm_provider`).
 - BLACS side: beambox-daq `src/bbx_devices/RasteringDevice/` (presses next point at shot start while armed; writes the point into the shot file).

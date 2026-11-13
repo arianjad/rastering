@@ -152,6 +152,25 @@ def test_next_point_moves_nothing_unless_the_raster_is_armed_for_blacs(gui):
     assert gui.client.press("next_point")["point_index"] == 1
 
 
+def test_a_move_while_the_raster_is_armed_for_blacs_is_refused_and_says_what_to_do(gui):
+    """Harm stopped: a shot's x, y (Raster_X / Raster_Y in the sequence) or a tab move pulls the
+    stage off the raster BLACS is stepping: two programs fight over the spot, the shot ablates a
+    point neither chose, and the next point's record is wrong. While the raster is armed for
+    BLACS a move is refused, no stage moves, and the words say to disarm or take the x, y out of
+    the sequence; after disarm the same move is done."""
+    from bbx_zmq import Refused
+    gui.client.hello()
+    gui.client.press("arm")
+    with pytest.raises(Refused) as e:
+        gui.client.set("xy", [500.0, 600.0])
+    assert e.value.code == "raster_armed"
+    assert e.value.words == ("the raster is armed for BLACS, so a move to x, y would leave its path: "
+                             "disarm it (BLACS tab or the GUI), or take Raster_X / Raster_Y out of the sequence")
+    assert (gui.x.moves, gui.y.moves) == ([], [])
+    gui.client.press("disarm")
+    assert gui.client.set("xy", [500.0, 600.0]) == [500.0, 600.0]
+
+
 def test_a_continuous_run_at_the_gui_is_not_taken_over_by_blacs(gui):
     """Harm stopped: BLACS's arm or disarm ends or converts a continuous raster the operator
     started at the GUI (the sweep stops half way, or two drivers move the stage). Both are
