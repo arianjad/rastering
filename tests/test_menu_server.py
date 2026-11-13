@@ -55,12 +55,12 @@ class Gui:
     """A SystemController with fake stages, its menu link served on a thread over the in-memory
     link, and a real BLACS client on it."""
 
-    def __init__(self, calibrated=True):
+    def __init__(self, calibrated=True, stage=FakeStage):
         import numpy as np
 
         import raster_controller as rc
         from bbx_zmq import Client, InMemoryTransport
-        self.x, self.y = FakeStage(), FakeStage()
+        self.x, self.y = stage(), stage()
         self.ctl = rc.SystemController(self.x, self.y, motor_bounds=TRAVEL, telemetry_period_s=0)
         if calibrated:
             self.ctl.calibration = rc.AffineCalibration(M=np.eye(2) * MM_PER_PX, b=np.zeros(2))
@@ -152,22 +152,42 @@ def test_next_point_moves_nothing_unless_the_raster_is_armed_for_blacs(gui):
     assert gui.client.press("next_point")["point_index"] == 1
 
 
-def test_a_move_while_the_raster_is_armed_for_blacs_is_refused_and_says_what_to_do(gui):
+def _make_raster(gui, state):
+    """Put the raster in `state` the way people do it: BLACS arms it ("armed"), BLACS arms then
+    disarms it ("local": the operator holds it), the operator starts a continuous run ("running")."""
+    if state in ("armed", "local"):
+        gui.client.press("arm")
+    if state == "local":
+        gui.client.press("disarm")
+    if state == "running":
+        gui.ctl.start_raster(iter(PATH), continuous=False, source="local", repeat=True, pingpong=False)
+        gui.ctl._raster_continuous = True        # running (not enqueued: the test drives no sweep)
+
+
+@pytest.mark.parametrize("state, code, holder", [
+    ("armed", "raster_armed", "the raster is armed for BLACS"),
+    ("local", "raster_held", "the raster is held at the GUI"),
+    ("running", "raster_running", "a continuous raster runs from the GUI"),
+])
+def test_a_move_while_any_raster_is_active_is_refused_and_says_what_to_do(gui, state, code, holder):
     """Harm stopped: a shot's x, y (Raster_X / Raster_Y in the sequence) or a tab move pulls the
-    stage off the raster BLACS is stepping: two programs fight over the spot, the shot ablates a
-    point neither chose, and the next point's record is wrong. While the raster is armed for
-    BLACS a move is refused, no stage moves, and the words say to disarm or take the x, y out of
-    the sequence; after disarm the same move is done."""
+    stage off a raster: the one BLACS steps, the one the operator holds, or a continuous run the
+    operator started at the GUI. The move lands between raster points, the shot ablates a spot
+    off the operator's path, and the shot file has no point for it. While any raster is active a
+    move is refused, no stage moves, and the words say to stop the raster at the GUI or take the
+    x, y out of the sequence; after the GUI's Stop the same move is done."""
     from bbx_zmq import Refused
     gui.client.hello()
-    gui.client.press("arm")
+    _make_raster(gui, state)
+    assert gui.client.snapshot()["raster_state"] == state
     with pytest.raises(Refused) as e:
         gui.client.set("xy", [500.0, 600.0])
-    assert e.value.code == "raster_armed"
-    assert e.value.words == ("the raster is armed for BLACS, so a move to x, y would leave its path: "
-                             "disarm it (BLACS tab or the GUI), or take Raster_X / Raster_Y out of the sequence")
+    assert e.value.code == code
+    assert e.value.words == (f"{holder}, so a move to x, y would leave its path: stop the raster with "
+                             "the GUI's Stop button first, or take Raster_X / Raster_Y out of the sequence")
     assert (gui.x.moves, gui.y.moves) == ([], [])
-    gui.client.press("disarm")
+    gui.ctl.stop_raster()                        # the GUI's Stop button
+    assert gui.client.snapshot()["raster_state"] == "off"
     assert gui.client.set("xy", [500.0, 600.0]) == [500.0, 600.0]
 
 

@@ -330,6 +330,14 @@ class CalibrationSession:
 # -----------------------------
 
 
+# A move to x, y is refused while a raster is active: (code, who holds the raster) per state.
+_MOVE_REFUSED = {
+    ARMED: ("raster_armed", "the raster is armed for BLACS"),
+    LOCAL: ("raster_held", "the raster is held at the GUI"),
+    RUNNING: ("raster_running", "a continuous raster runs from the GUI"),
+}
+
+
 class RasterMenuLink:
     """The handlers of this GUI's menu server (bbx_zmq MenuServer, menu bbx_zmq/menus/rastering.py).
 
@@ -341,9 +349,11 @@ class RasterMenuLink:
         read_all()       every menu value: xy, x, y [px], shots_per_step, raster_state,
                          point_index, path_len
         set xy           one move of both axes to [x, y] (target frame, px). Refused without a
-                         calibration (pixels would be taken as motor mm), while the raster is
-                         armed for BLACS ("raster_armed": the move would leave its path) and,
-                         with this GUI's travel check, outside the stage travel ("move_refused").
+                         calibration (pixels would be taken as motor mm), while any raster is
+                         active (armed for BLACS "raster_armed", held at the GUI "raster_held", a
+                         continuous run "raster_running": the move would leave its path; only
+                         raster state "off" takes a move) and, with this GUI's travel check,
+                         outside the stage travel ("move_refused").
         set shots_per_step   stored and shown on the GUI's status strip
         press arm        arm the path set up in the Run tab, step mode, for BLACS (through the
                          panel: remote_arm_provider); a raster armed here is handed to BLACS where
@@ -392,10 +402,12 @@ class RasterMenuLink:
             if c.calibration is None:
                 raise Refused("not_calibrated", "no calibration set: calibrate in the GUI first "
                                                 "(x, y are camera pixels)")
-            if self.raster_state() == ARMED:
-                raise Refused("raster_armed", "the raster is armed for BLACS, so a move to x, y would "
-                                              "leave its path: disarm it (BLACS tab or the GUI), or take "
-                                              "Raster_X / Raster_Y out of the sequence")
+            state = self.raster_state()
+            if state != OFF:
+                code, holder = _MOVE_REFUSED[state]
+                raise Refused(code, f"{holder}, so a move to x, y would leave its path: stop the raster "
+                                    "with the GUI's Stop button first, or take Raster_X / Raster_Y out "
+                                    "of the sequence")
             res = c.request_move_target(float(value[0]), float(value[1]), source="zmq", wait=True,
                                         timeout_s=MENU.value("xy").set_s)
             if res is None or not res.ok:
