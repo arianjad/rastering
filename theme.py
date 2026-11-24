@@ -205,6 +205,7 @@ QPushButton:disabled, QToolButton:disabled {{
 QPushButton[kind="primary"] {{ background: {t['ink']}; color: {t['ground']}; border-color: {t['ink']}; font-weight: 600; }}
 QPushButton[kind="primary"]:hover {{ background: {t['label']}; border-color: {t['label']}; }}
 QPushButton[kind="primary"]:focus {{ border: 2px solid {t['path']}; }}
+QPushButton[kind="edited"] {{ color: {t['path']}; border-color: {t['path']}; }}
 QPushButton[kind="primary"]:disabled {{ background: {t['ground']}; color: {t['dim']}; border-color: {t['rule']}; }}
 
 QAbstractSpinBox, QLineEdit, QComboBox {{

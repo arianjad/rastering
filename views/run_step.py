@@ -49,8 +49,8 @@ class RunStep(QtWidgets.QWidget):
         self.hand_btn = _button("Hand to BLACS", "BLACS steps the armed path from the point it is at.")
         self.take_back_btn = _button("Take back", "Step the armed path here, from the point it is at.")
         self.rearm_btn = _button("Re-arm with edited pattern",
-                                 "Replace the armed path with the pattern on the image. Who steps it "
-                                 "stays the same; the stage does not move until the next step.")
+                                 "Replace the armed path with the pattern on the image, from its first "
+                                 "point. BLACS keeps the raster if it has it.")
         grid = QtWidgets.QGridLayout()
         grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(8)
@@ -114,8 +114,9 @@ class RunStep(QtWidgets.QWidget):
         g.addWidget(self.record_file, 1, 0, 1, 2)
         g.addWidget(label("Trail on image"), 2, 0)
         g.addWidget(self.trail, 2, 1)
-        g.setColumnStretch(1, 1)
+        g.setColumnStretch(2, 1)
         lay.addWidget(ph)
+        self.show_record_file("")
         lay.addStretch(1)
 
         self.pingpong.setChecked(True)
@@ -156,7 +157,7 @@ class RunStep(QtWidgets.QWidget):
         """Style one button as the main action now."""
         for b in (self.start_btn, self.arm_blacs_btn, self.step_btn, self.stop_btn, self.hand_btn,
                   self.take_back_btn, self.rearm_btn):
-            set_prop(b, "kind", "primary" if b is button else "")
+            set_prop(b, "kind", "primary" if b is button else "edited" if b is self.rearm_btn else "")
 
     # ---------------- saved settings ----------------
     def settings(self) -> Dict[str, Any]:
