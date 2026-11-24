@@ -15,8 +15,8 @@ from raster_paths import MAX_PATH_POINTS, RasterSpec, nearest_index, points_from
 
 
 def _old_hull_loop(hull, xstep, ystep):
-    """The hull fill as it was before the rewrite (one find_simplex call per grid point), copied
-    from raster_paths.py iter_convex_hull_fill with bounds=None, order "xy"."""
+    """RaX's hull fill (one find_simplex call per grid point), copied from upstream
+    raster_paths.py iter_convex_hull_fill with bounds=None, order "xy"."""
     def arange_inclusive(start, stop, step, include_stop=True, eps=1e-12):
         n = int(np.floor((stop - start) / step + eps)) + 1
         if n <= 0:
@@ -44,12 +44,16 @@ def _old_hull_loop(hull, xstep, ystep):
     ([(30, 60), (450, 40), (420, 460), (60, 430)], (10.0, 10.0)),        # across a 500 px frame
     ([(0, 0), (90, 3), (95, 11), (4, 9), (50, 5)], (2.5, 0.5)),          # thin sliver, inner point
 ])
-def test_hull_fill_visits_the_same_points_in_the_same_order_as_before(hull, step):
-    """Harm stopped: the faster hull fill ablates a different set of spots, or the same spots in
-    another order, than the pattern operators know (shot records and earlier runs no longer line
-    up). The vectorised fill gives exactly the old loop's points, in its order."""
+def test_hull_fill_visits_raxs_spots_snaking_like_the_squares(hull, step):
+    """Harm stopped: the hull fill ablates a different set of spots than RaX's loop, or jumps
+    back to the top after each column (one long stage move per column, which the squares never
+    make). Same spots as RaX's loop, column by column: down the first, up the next, and so on."""
     spec = RasterSpec(kind="hull", hull_points=hull, xstep=step[0], ystep=step[1])
-    assert points_from_spec(spec) == _old_hull_loop(hull, *step)
+    columns = {}
+    for p in _old_hull_loop(hull, *step):          # x outer, y inner (top to bottom)
+        columns.setdefault(p[0], []).append(p)
+    snake = [p for i, col in enumerate(columns.values()) for p in (col if i % 2 == 0 else col[::-1])]
+    assert points_from_spec(spec) == snake
 
 
 def test_square_patterns_snake_from_the_top_left_corner():

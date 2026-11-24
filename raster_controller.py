@@ -644,7 +644,7 @@ class SystemController(QObject):
             self.message.emit("refused", f"Calibration failed: {e}. Press Calibrate to start again.")
             return
         cal = CalibrationFile(affine, uh, self._stage.backlash_mm, clicks.camera_settings,
-                              notes=f"fitted from {n} spots")
+                              notes=f"fitted from {summary}")
         res = self._apply(cal, save_to=self.calibration_path)
         self.calibration_progress.emit(0, 0)
         if res.ok:

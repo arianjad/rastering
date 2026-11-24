@@ -10,7 +10,7 @@ from typing import Optional, Sequence, Tuple
 
 from PyQt5 import QtCore, QtWidgets
 
-from .widgets import NumberBox, Section, label, set_prop
+from .widgets import IntBox, NumberBox, Section, label, set_prop
 
 
 def _row(*buttons) -> QtWidgets.QHBoxLayout:
@@ -44,14 +44,20 @@ class SetupStep(QtWidgets.QWidget):
         g.addWidget(self.cal_detail, 1, 0, 1, 2)
 
         self.calibrate_btn = QtWidgets.QPushButton("Calibrate")
-        self.calibrate_btn.setToolTip("Fit image px to stage mm from 3 spots: jog the beam to a spot, "
-                                      "click the laser spot on the image, three times.")
+        self.calibrate_btn.setToolTip("Fit image px to stage mm: jog the beam to a spot, click the laser "
+                                      "spot on the image; once per spot.")
+        self.spots_label = label("spots")
+        self.spots = IntBox(minimum=3, maximum=20)
+        self.spots.setValue(3)
+        self.spots.setFixedWidth(56)
+        self.spots.setToolTip("How many spots to click. 3 fit exactly; with 4 or more the log shows "
+                              "the fit error in um, so a mis-click shows.")
         self.cancel_btn = QtWidgets.QPushButton("Cancel calibration")
         self.cancel_btn.setToolTip("Stop collecting spots; the calibration in use stays.")
         self.restore_camera_btn = QtWidgets.QPushButton("Use the calibration's camera settings")
         self.restore_camera_btn.setToolTip("Set the camera region, rotation and mirror back to the ones "
                                            "this calibration was made with.")
-        g.addLayout(_row(self.calibrate_btn, self.cancel_btn), 2, 0, 1, 2)
+        g.addLayout(_row(self.calibrate_btn, self.spots, self.spots_label, self.cancel_btn), 2, 0, 1, 2)
         g.addLayout(_row(self.restore_camera_btn), 3, 0, 1, 2)
 
         self.load_btn = QtWidgets.QPushButton("Load…")
@@ -162,7 +168,8 @@ class SetupStep(QtWidgets.QWidget):
         self.cal_detail.setText(detail)
         self.cal_detail.setVisible(bool(detail))
         self.cancel_btn.setVisible(calibrating)
-        self.calibrate_btn.setVisible(not calibrating)
+        for w in (self.calibrate_btn, self.spots, self.spots_label):
+            w.setVisible(not calibrating)
         self.restore_camera_btn.setVisible(state == "stale")
         show = M is not None and not calibrating
         self.matrix.setVisible(show)

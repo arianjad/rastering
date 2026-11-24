@@ -19,17 +19,18 @@ the BLACS ports (55535, 55536) free, so a simulated copy can run next to the lab
 
 - **Control bar** (top): who moves the stage (OFF, RUNNING, ARMED FOR BLACS, HELD AT GUI), the
   stage position [mm], the point, the calibration, shots per point, camera frames per second.
-- **Setup**: calibration (Calibrate: jog the beam to 3 spots and click the laser spot each time;
+- **Setup**: calibration (Calibrate: jog the beam to a spot and click the laser spot, once per spot; 3 spots by default, with
+  4 or more the log shows the fit error in um;
   Load…, Save as…, Use last, Clear), device home, user home and backlash (kept in the calibration
   file), camera exposure, gain, gamma, region, rotation and mirror, and the camera settings file.
 - **Pattern**: square (rows along x or columns along y), inward spiral, or a hull of corners you
-  click on the image; steps and bounds in image px. The points show on the image as you edit.
+  click on the image, visited column by column (down one, up the next); steps and bounds in image px. The points show on the image as you edit.
 - **Run**: Start (continuous) or Arm here (step with Step), Arm for BLACS, Hand to BLACS / Take
-  back, Stop (also Esc), Re-arm with edited pattern, go to a point, position history.
+  back, Stop (Esc stops the GUI's own run, not BLACS's), Re-arm with edited pattern, go to a point, position history.
 - **Move stage** (always visible): arrows move the spot on the image by the step [mm]; Go to x, y;
   Go to user home. Live in every state: a move while BLACS has the raster armed, or outside the
   0-12 mm travel, is done and logged in red; a jog past the travel edge stops at the edge.
-- File > Save settings as defaults keeps the pattern, run options and jog step for the next start.
+- File > Save settings as defaults keeps the pattern, run options, jog step and number of calibration spots for the next start.
 
 ## BLACS link
 

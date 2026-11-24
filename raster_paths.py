@@ -181,8 +181,8 @@ def _check_spiral_size(spec: RasterSpec) -> None:
 
 
 def _hull(hull: Sequence[XY], xstep: float, ystep: float) -> List[XY]:
-    """The grid points inside the convex hull of the clicked corners, over the hull's bounding box,
-    x outer and y inner."""
+    """The grid points inside the convex hull of the clicked corners, over the hull's bounding box
+    (RaX's spots), column by column like the squares: down the first column, up the next."""
     if len(hull) < 3:
         raise ValueError("a convex hull needs at least 3 points: click them on the image")
     if xstep <= 0 or ystep <= 0:
@@ -199,7 +199,10 @@ def _hull(hull: Sequence[XY], xstep: float, ystep: float) -> List[XY]:
                          "increase step x / y for this hull")
     gx, gy = np.meshgrid(xs, ys, indexing="ij")
     grid = np.column_stack([gx.ravel(), gy.ravel()])
-    inside = grid[tri.find_simplex(grid) >= 0]
-    if len(inside) > MAX_PATH_POINTS:
-        raise _too_many(len(inside))
+    idx = np.flatnonzero(tri.find_simplex(grid) >= 0)        # x outer, y inner
+    if len(idx) > MAX_PATH_POINTS:
+        raise _too_many(len(idx))
+    col, row = np.divmod(idx, ys.size)
+    _, rank = np.unique(col, return_inverse=True)          # 0, 1, 2 ... over columns with points
+    inside = grid[idx[np.lexsort((np.where(rank % 2 == 0, row, -row), rank))]]
     return [(float(x), float(y)) for x, y in inside]

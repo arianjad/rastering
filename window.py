@@ -603,7 +603,7 @@ class RasterWindow(QtWidgets.QMainWindow):
     # ================================================================ calibration and stage
     def _calibrate(self) -> None:
         self._cal_clicks = []
-        self.ctl.start_calibration(3, camera_settings=self.camera_settings())
+        self.ctl.start_calibration(self.setup.spots.value(), camera_settings=self.camera_settings())
 
     def _load_calibration(self) -> None:
         path, _ = QtWidgets.QFileDialog.getOpenFileName(self, "Load calibration", HERE, "Calibration (*.json)")
@@ -741,11 +741,17 @@ class RasterWindow(QtWidgets.QMainWindow):
             self._write_history(self._pos)
 
     def _escape(self) -> None:
-        """Esc: stop the raster (and stop collecting calibration spots). Always asks the controller:
-        BLACS may have armed a raster the window has not drawn yet; with none, nothing happens."""
+        """Esc: stop the GUI's own raster (held here or running) and stop collecting calibration
+        spots. A raster BLACS holds stays armed: an Esc pressed by habit, to leave a box, would park
+        the stage while BLACS goes on shooting one spot. The Stop button stops BLACS's raster. Asks
+        the controller, not the window: the raster may have changed hands a moment ago."""
         if self._cal_progress != (0, 0):
             self.ctl.cancel_calibration()
-        self.ctl.stop_raster()
+        state = self.ctl.raster_snapshot().state
+        if state in ("local", "running"):
+            self.ctl.stop_raster()
+        elif state == "armed":
+            self.log.add("Esc leaves BLACS's raster armed. To stop it, press Stop.")
 
     # ================================================================ the image
     def _on_click(self, x: float, y: float, modifiers: int) -> None:
@@ -807,6 +813,9 @@ class RasterWindow(QtWidgets.QMainWindow):
             jog = d.get("jog") if isinstance(d.get("jog"), dict) else {}
             if jog.get("step_mm") is not None:
                 self.jog.set_step_mm(float(jog["step_mm"]))
+            cal = d.get("calibration") if isinstance(d.get("calibration"), dict) else {}
+            if cal.get("spots") is not None:
+                self.setup.spots.setValue(int(cal["spots"]))
         except Exception as e:          # a hand-edited value of the wrong type: open all the same
             self.log.add(f"Saved defaults in {path} not all used ({type(e).__name__}: {e}): the values "
                          "after the bad one are the window's own.", error=True)
@@ -815,7 +824,7 @@ class RasterWindow(QtWidgets.QMainWindow):
     def settings(self) -> dict:
         """What File > Save settings as defaults writes."""
         return {"pattern": self.pattern.settings(), "run": self.run.settings(),
-                "jog": {"step_mm": self.jog.step_mm()}}
+                "jog": {"step_mm": self.jog.step_mm()}, "calibration": {"spots": self.setup.spots.value()}}
 
     def _save_defaults(self) -> None:
         try:
@@ -823,7 +832,8 @@ class RasterWindow(QtWidgets.QMainWindow):
         except (OSError, TypeError, ValueError) as e:
             self.log.add(f"Defaults not saved: {e}", error=True)
             return
-        self.log.add(f"Pattern, run options and jog step saved as defaults ({os.path.basename(self._defaults_path)}).")
+        self.log.add(f"Pattern, run options, jog step and calibration spots saved as defaults "
+                     f"({os.path.basename(self._defaults_path)}).")
 
     def _set_light(self, on: bool) -> None:
         theme.apply_theme(QtWidgets.QApplication.instance(), light=bool(on))

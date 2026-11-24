@@ -254,14 +254,19 @@ def test_escape_stops_a_continuous_run(make):
     assert win.run.start_btn.isEnabled() and not win.run.stop_btn.isEnabled()
 
 
-def test_escape_stops_a_raster_blacs_armed_a_moment_ago(make):
-    """Harm stopped: BLACS arms the raster and the operator presses Esc before the window has
-    drawn the news; the window still believed nothing was armed, so Esc did nothing and BLACS
-    went on stepping the stage. Esc stops whatever raster the controller has, at once."""
+def test_escape_leaves_a_raster_blacs_armed_a_moment_ago(make):
+    """Harm stopped: an Esc pressed by habit (to leave a number box) while BLACS runs a sequence
+    stopped BLACS's raster; the stage parked and BLACS went on shooting one spot. Esc leaves a
+    BLACS-armed raster armed, also one armed before the window drew it, and says so; the Stop
+    button still stops it."""
     rig, win = make(blacs=True)
     QtWidgets.QApplication.setActiveWindow(win)
     assert rig.blacs.program("arm_raster", 0)["armed"] == 3   # BLACS's thread; no Qt events run since
-    QTest.keyClick(win, QtCore.Qt.Key_Escape)
+    QTest.keyClick(win.pattern.xstep, QtCore.Qt.Key_Escape)
+    assert rig.ctl.raster_snapshot().state == "armed"
+    assert "Esc leaves BLACS's raster armed" in win.log.lines()[-1]
+    pump_until(lambda: win.run.stop_btn.isEnabled())
+    win.run.stop_btn.click()
     assert rig.ctl.raster_snapshot().state == "off"
 
 
@@ -624,3 +629,14 @@ def test_a_blacs_link_that_did_not_start_is_shown_when_the_window_opens(tmp_path
     finally:
         win.close()
         rig.close()
+
+
+def test_the_spots_box_sets_how_many_clicks_a_calibration_takes(make):
+    """Harm stopped: the operator asks for 5 spots to see the fit error, and the window fits after
+    3, so the spots meant to catch a mis-click are never taken. Calibrate waits for as many clicks
+    as the Spots box says."""
+    rig, win = make()
+    win.setup.spots.setValue(5)
+    win.setup.calibrate_btn.click()
+    pump_until(lambda: win.bar.status()["calibration"] == "collecting")
+    assert rig.ctl.calibration_clicks == (0, 5)

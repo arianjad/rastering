@@ -93,7 +93,9 @@ class AffineCalibration:
 
 def fit_affine(px_points: Sequence[XY], mm_points: Sequence[XY]) -> Tuple[AffineCalibration, str]:
     """Least-squares affine fit of clicked spots [px] to stage positions [mm]. Returns the
-    calibration and one line for the log. Raises ValueError (plain words) when it cannot fit."""
+    calibration and one line for the log: with 4 or more spots it holds the fit error [um] (how far
+    the fit puts each clicked spot from its stage position); 3 spots fit exactly, so a mis-click
+    shows only from the 4th spot on. Raises ValueError (plain words) when it cannot fit."""
     n = len(px_points)
     if n < 3 or len(mm_points) != n:
         raise ValueError(f"need at least 3 spots with a stage position each (have {n})")
@@ -114,7 +116,11 @@ def fit_affine(px_points: Sequence[XY], mm_points: Sequence[XY]) -> Tuple[Affine
     cal = AffineCalibration([[params[0], params[1]], [params[3], params[4]]], [params[2], params[5]],
                             max_cond=None)      # above MAX_MATRIX_COND: used, the controller warns
     scale = float(np.sqrt(abs(np.linalg.det(cal.M))))
-    return cal, f"{n} spots, scale {scale:.4g} mm/px"
+    words = f"{n} spots, scale {scale:.4g} mm/px"
+    if n > 3:
+        err_um = 1000.0 * np.hypot(*(cal.px_to_mm_many(px_points) - np.asarray(mm_points, dtype=float)).T)
+        words += f", fit error {np.sqrt(np.mean(err_um ** 2)):.1f} um rms, {err_um.max():.1f} um worst spot"
+    return cal, words
 
 
 @dataclass(frozen=True)

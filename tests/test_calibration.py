@@ -359,3 +359,16 @@ def test_the_fit_line_has_no_number_that_reads_like_a_failed_limit():
     mm = [(1.0, 1.0), (2.1, 1.0), (1.0, 2.1)]
     _cal, words = fit_affine(px, mm)
     assert words == "3 spots, scale 0.011 mm/px"
+
+
+def test_four_or_more_spots_show_a_mis_click_as_the_fit_error_in_um():
+    """Harm stopped: with exactly 3 spots a mis-click still fits exactly, so a calibration that
+    puts every raster point tens of um off looks perfect. With 4 or more spots the fit line gives
+    the fit error [um]: zero for good clicks, clearly not zero when one spot is 5 px off."""
+    px = [(0.0, 0.0), (100.0, 0.0), (0.0, 100.0), (100.0, 100.0)]
+    mm = [(1.0 + 0.011 * x, 1.0 + 0.011 * y) for x, y in px]
+    _cal, words = fit_affine(px, mm)
+    assert words == "4 spots, scale 0.011 mm/px, fit error 0.0 um rms, 0.0 um worst spot"
+    mis = px[:3] + [(105.0, 100.0)]                   # 5 px = 55 um off at 0.011 mm/px
+    _cal, words = fit_affine(mis, mm)
+    assert words == "4 spots, scale 0.01086 mm/px, fit error 13.4 um rms, 13.7 um worst spot"

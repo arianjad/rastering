@@ -44,8 +44,8 @@ class RunStep(QtWidgets.QWidget):
         self.arm_blacs_btn = _button("Arm for BLACS", "Arm the pattern; BLACS steps it, one point per "
                                                       "group of shots. Nothing moves until the first shot.")
         self.step_btn = _button("Step", "Move to the next point of the armed path.")
-        self.stop_btn = _button("Stop (Esc)", "End the raster; queued points are dropped. "
-                                               "A move already under way finishes.")
+        self.stop_btn = _button("Stop", "End the raster, BLACS's too; queued points are dropped. A move "
+                                         "already under way finishes. Esc stops the GUI's own run only.")
         self.hand_btn = _button("Hand to BLACS", "BLACS steps the armed path from the point it is at.")
         self.take_back_btn = _button("Take back", "Step the armed path here, from the point it is at.")
         self.pause_btn = _button("Pause", "Hold the continuous run here, at the point it is at. "
