@@ -31,7 +31,7 @@ def _every_move(ctl):
         "move one axis": lambda: ctl.move_axis_mm("X", 12.5),
         "jog": lambda: ctl.jog_mm(12.0, 0.0),                    # from 1.0 mm to 13.0 mm
         "move in px": lambda: ctl.move_px(1300.0, 200.0),
-        "user home": lambda: (ctl.set_user_home("X", 13.0), ctl.go_user_home())[1],
+        "user home": lambda: (ctl.set_user_home("X", 13.0), ctl.set_user_home("Y", 2.0), ctl.go_user_home())[2],
         "user home X": lambda: (ctl.set_user_home("X", 13.0), ctl.go_user_home("X"))[1],
     }
 
@@ -102,6 +102,8 @@ def test_while_a_raster_is_active_only_its_own_moves_reach_the_stage(gui, state,
     running raster: the next shot ablates a spot off the path and the shot file records the
     path's point for it. Every other move kind is refused, naming who holds the raster; the
     raster's own step still moves."""
+    gui.ctl.set_user_home("X", 5.0)
+    gui.ctl.set_user_home("Y", 5.0)
     _hold_raster(gui, state)
     futures = [f() for f in (lambda: gui.ctl.move_mm(5.0, 5.0), lambda: gui.ctl.move_axis_mm("Y", 5.0),
                              lambda: gui.ctl.jog_mm(0.1, 0.0), lambda: gui.ctl.move_px(500.0, 500.0),

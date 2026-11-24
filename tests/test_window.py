@@ -115,6 +115,9 @@ def test_buttons_offer_only_what_the_raster_state_allows(make):
     between shots; or the one action the operator needs is greyed with no reason given. Each state
     offers its own actions, and a greyed button says why."""
     rig, win = make()
+    rig.ctl.set_user_home("X", 2.0)                             # Go to user home needs one
+    rig.ctl.set_user_home("Y", 2.0)
+    pump()
     assert run_buttons(win) == {"start", "arm_blacs"}
     assert len(hand_moves(win)) == 8
 
@@ -381,6 +384,24 @@ def test_a_backlash_answer_after_loading_another_file_does_not_rewrite_it(make, 
     pump(0.05)
     with open(other) as f:
         assert f.read() == before
+
+
+def test_go_to_user_home_is_greyed_until_one_is_set(make):
+    """Harm stopped: with no user home ever set, Setup showed "x 0.000 mm, y 0.000 mm" as if one
+    were set, and Go to user home drove the stage to its corner (0, 0) mm, off the target. Until
+    one is set, Setup says "not set" and Go to user home is greyed with the reason."""
+    rig, win = make()
+    assert win.setup.user_home_reading.text() == "not set"
+    assert not win.jog.home_btn.isEnabled()
+    assert win.jog.home_btn.toolTip() == "No user home set: set one in Setup (Stage, User home)."
+    assert not rig.ctl.go_user_home().result(2).ok
+    rig.idle()
+    assert rig.moves() == []
+    win.setup.user_home_x.setValue(4.0)
+    win.setup.user_home_y.setValue(5.0)
+    win.setup.user_home_set_btn.click()
+    pump()
+    assert win.jog.home_btn.isEnabled() and win.setup.user_home_reading.text() == "x 4.000 mm,  y 5.000 mm"
 
 
 def test_a_user_home_set_does_not_lose_a_backlash_set_still_waiting(make):

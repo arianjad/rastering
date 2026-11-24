@@ -150,7 +150,7 @@ def test_backlash_shows_what_the_motor_took_and_saving_never_waits_for_the_stage
         with open(tmp_path / "saved.json") as f:
             data = json.load(f)
         assert (data["backlash"], data["notes"]) == ({"x": 0.05, "y": 0.0}, "run 7")
-        assert data["user_home"] == {"x": 0.0, "y": 0.0}
+        assert data["user_home"] is None                 # never set: not saved as (0, 0)
     finally:
         g.close()
 

@@ -61,7 +61,7 @@ the reason.
 | Apply camera settings from cal | Kept: "Use the calibration's camera settings", shown when the calibration is stale |
 | Matrix spin boxes M11..M22, bX, bY | Changed: read-only M [mm/px], b [mm] and scale |
 | Device Home X, Y, Both | Kept; greyed while a raster is active |
-| User home readings, setpoints, Set X / Set Y | Kept: one Set for x and y; "Here" fills them from the stage; saved into the calibration file at once |
+| User home readings, setpoints, Set X / Set Y | Kept: one Set for x and y; "Here" fills them from the stage; saved into the calibration file at once. Until one is set it reads "not set" and Go to user home is greyed (no (0, 0) default) |
 | User home Go X / Go Y | Dropped: "Go to user home" (both axes) under Move stage, or Go to x, y |
 | Backlash readings, setpoints, Set X / Set Y | Kept: one Set; saved into the calibration file once the motors answer (an axis that fails is not waited for; a calibration loaded meanwhile is not written); greyed while a raster is active |
 | Display Options group | Merged |

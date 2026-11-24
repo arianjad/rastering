@@ -175,7 +175,8 @@ class SetupStep(QtWidgets.QWidget):
                     cell.setText(t.replace("-", "−"))
 
     def show_user_home(self, x: Optional[float], y: Optional[float]) -> None:
-        self.user_home_reading.setText(f"x {_mm(x)} mm,  y {_mm(y)} mm")
+        """The user home [mm]; None: not set."""
+        self.user_home_reading.setText("not set" if x is None and y is None else f"x {_mm(x)} mm,  y {_mm(y)} mm")
         if x is not None and y is not None:
             self.user_home_x.set_quietly(x)
             self.user_home_y.set_quietly(y)

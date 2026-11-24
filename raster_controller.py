@@ -77,7 +77,7 @@ class SystemController(QObject):
     calibration_changed = pyqtSignal(object)      # CalibrationFile, or None: no calibration
     calibration_progress = pyqtSignal(int, int)   # spots recorded, spots needed; (0, 0): not calibrating
     backlash_changed = pyqtSignal(str, float)     # axis, what the motor reports [mm]
-    user_home_changed = pyqtSignal(float, float)  # [mm]
+    user_home_changed = pyqtSignal(object, object)  # [mm]; None: that axis not set
 
     def __init__(self, motor_x, motor_y, *, travel_mm, calibration_path: str,
                  pointer_path: str = LAST_CALIBRATION_POINTER,
@@ -93,7 +93,7 @@ class SystemController(QObject):
         self._leg = 0    # counts arms, pauses and continues: a run's point from before one takes no next step
         self._cal_file: Optional[CalibrationFile] = None
         self._clicks: Optional[_Clicks] = None
-        self._user_home: XY = (0.0, 0.0)
+        self._user_home: Tuple[Optional[float], Optional[float]] = (None, None)   # [mm]; None: not set
         self._menu_thread: Optional[threading.Thread] = None
         self._menu_stop = threading.Event()
         self._link_status: Tuple[str, str] = ("", "")
@@ -131,7 +131,8 @@ class SystemController(QObject):
         return self._stage.backlash_mm
 
     @property
-    def user_home_mm(self) -> XY:
+    def user_home_mm(self) -> Tuple[Optional[float], Optional[float]]:
+        """The user home [mm]; an axis never set (here or in the calibration file) is None."""
         with self._lock:
             return self._user_home
 
@@ -182,8 +183,15 @@ class SystemController(QObject):
         return self._stage.submit(Command(f"Device home {axis}", "home", axis=axis))
 
     def go_user_home(self, axis: Optional[str] = None) -> "Future[Result]":
-        """Move to the user home: both axes (axis None) or one."""
+        """Move to the user home: both axes (axis None) or one. Never set: nothing moves."""
         ux, uy = self.user_home_mm
+        need = (ux, uy) if axis is None else (ux,) if _axis(axis) == "X" else (uy,)
+        if None in need:
+            words = "no user home set: set one in Setup (Stage, User home)"
+            self.message.emit("refused", words)
+            future: "Future[Result]" = Future()
+            future.set_result(Result(False, words, "no_user_home"))
+            return future
         if axis is None:
             return self._stage.submit(Command(f"User home ({ux:.4f}, {uy:.4f}) mm", "move", mm=(ux, uy)))
         axis = _axis(axis)
@@ -445,7 +453,7 @@ class SystemController(QObject):
             if cal is None:
                 refusal = Refused("not_calibrated", "no calibration to save: calibrate first")
             else:
-                cal = replace(cal, user_home_mm=self._user_home, backlash_mm=self._stage.backlash_mm,
+                cal = replace(cal, user_home_mm=self._user_home_xy_locked(), backlash_mm=self._stage.backlash_mm,
                               camera_settings=cal.camera_settings if camera_settings is None else camera_settings,
                               notes=cal.notes if notes is None else str(notes))
                 try:
@@ -495,6 +503,10 @@ class SystemController(QObject):
     def _raster_state(self) -> Tuple[str, int]:
         with self._lock:
             return self._session.state, self._session.run
+
+    def _user_home_xy_locked(self) -> Optional[XY]:
+        """The user home to store in a calibration file: None unless both axes are set."""
+        return None if None in self._user_home else self._user_home
 
     def _refused(self, r: Refused) -> Result:
         self.message.emit("refused", r.words)
@@ -611,7 +623,7 @@ class SystemController(QObject):
             n = len(clicks.px)
             if n >= clicks.required:
                 self._clicks = None
-            uh = self._user_home
+            uh = self._user_home_xy_locked()
         self.calibration_progress.emit(n, clicks.required)
         if n < clicks.required:
             return

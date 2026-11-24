@@ -43,11 +43,12 @@ NEED_CAL = "Calibrate first (Setup)."
 NEED_PATTERN = "No pattern: set one up in Pattern."
 STEP_WHY = {"off": "Arm the pattern first (Arm here).", "armed": "BLACS steps this raster: Take back first.",
             "running": "A continuous run steps this raster: Stop it first."}
-JOG_NOT_CALIBRATED = "Not calibrated: arrows follow the stage axes; check the direction on the image."
+NO_USER_HOME = "No user home set: set one in Setup (Stage, User home)."
+JOG_NOT_CALIBRATED ="Not calibrated: arrows follow the stage axes; check the direction on the image."
 
 
 def gates(state: str, *, calibrated: bool, calibrating: bool, busy: bool, pattern_ok: bool,
-          edited: bool, selected: bool) -> Dict[str, Tuple[bool, str]]:
+          edited: bool, selected: bool, user_home: bool = True) -> Dict[str, Tuple[bool, str]]:
     """Every gated control: name -> (enabled, why not). The one place that decides it."""
     off = state == "off"
 
@@ -72,6 +73,8 @@ def gates(state: str, *, calibrated: bool, calibrating: bool, busy: bool, patter
         "home": need(idle),
         "backlash": need(idle),        # changes how the motors move mid-path, and saves the calibration file
         "moves": need((off, "A raster is active: stop it before moving the stage by hand.")),
+        "go_user_home": need((off, "A raster is active: stop it before moving the stage by hand."),
+                             (user_home, NO_USER_HOME)),
         "user_home_here": need((not busy, "The stage is moving: wait until it stops.")),
         "start": runnable,
         "arm_blacs": runnable,
@@ -383,7 +386,8 @@ class RasterWindow(QtWidgets.QMainWindow):
         s = self._snap
         g = gates(s.state, calibrated=self.ctl.calibration is not None,
                   calibrating=self._cal_progress != (0, 0), busy=self._busy, pattern_ok=bool(self._points),
-                  edited=s.path_edited, selected=s.selected_index >= 0)
+                  edited=s.path_edited, selected=s.selected_index >= 0,
+                  user_home=None not in self.ctl.user_home_mm)
         st, r = self.setup, self.run
         for key, widgets in (("calibrate", (st.calibrate_btn,)), ("cancel_calibration", (st.cancel_btn,)),
                              ("load_calibration", (st.load_btn,)), ("use_last", (st.use_last_btn,)),
@@ -402,6 +406,7 @@ class RasterWindow(QtWidgets.QMainWindow):
         r.rearm_btn.setVisible(s.path_edited)
         r.set_primary(getattr(r, PRIMARY.get(s.state, "start") + "_btn"))
         self.jog.set_moves_enabled(*g["moves"])
+        _gate(self.jog.home_btn, *g["go_user_home"])
         self.jog.show_note("" if self.ctl.calibration is not None else JOG_NOT_CALIBRATED)
         self.camera_panel.set_geometry_enabled(*g["camera_geometry"])
         self._moving.setVisible(self._busy and s.state == "off")
@@ -495,6 +500,7 @@ class RasterWindow(QtWidgets.QMainWindow):
 
     def _on_user_home(self, *_) -> None:
         self.setup.show_user_home(*self.ctl.user_home_mm)
+        self._apply_gates()
 
     # ================================================================ camera
     def _on_camera_info(self, info: CameraInfo) -> None:
