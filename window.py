@@ -165,7 +165,6 @@ class RasterWindow(QtWidgets.QMainWindow):
         self._on_user_home()
         self.setup.show_backlash(*controller.backlash_mm)
         self._on_position(None)
-        self._pattern_changed()
         QtCore.QTimer.singleShot(0, self._pick_first_step)
 
     # ================================================================ layout
@@ -726,7 +725,7 @@ class RasterWindow(QtWidgets.QMainWindow):
         if isinstance(pat.get("bounds"), list):
             self._fill_from_frame = False          # saved bounds win over the first frame's size
         self.run.apply_settings(d.get("run") if isinstance(d.get("run"), dict) else {})
-        self.pattern.apply_settings(pat)
+        self.pattern.apply_settings(pat)              # emits changed once: the first points and plan
         jog = d.get("jog") if isinstance(d.get("jog"), dict) else {}
         if jog.get("step_mm") is not None:
             self.jog.set_step_mm(float(jog["step_mm"]))
