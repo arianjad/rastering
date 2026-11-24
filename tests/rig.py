@@ -40,7 +40,7 @@ class FakeMotor:
     def get_position(self):
         return self.pos
 
-    def move_to(self, pos):
+    def move_to(self, pos, on_progress=None):
         self.moving.set()
         if self.gate is not None:
             self.gate.wait(5)
@@ -50,7 +50,7 @@ class FakeMotor:
         self.pos = float(pos)
         return self.pos
 
-    def home(self):
+    def home(self, on_progress=None):
         self.calls.append((self.name, "home"))
         self.pos = 0.0
         return 0.0

@@ -8,8 +8,11 @@ from __future__ import annotations
 import os
 import threading
 import time
+from typing import Callable, Optional
 
 from config import HardwareConfig
+
+PROGRESS_S = 0.2   # while a move or a home runs, its position is read this often for the display [s]
 
 _DLLS = (
     "Thorlabs.MotionControl.DeviceManagerCLI.dll",
@@ -49,13 +52,19 @@ class TaskWaiter:
         self._done_ids.add(int(task_id))
         self._event.set()
 
-    def wait(self, task_id: int, timeout_s: float) -> bool:
-        """True when task `task_id` ended within `timeout_s`."""
+    def wait(self, task_id: int, timeout_s: float, *, every_s: Optional[float] = None,
+             on_tick: Optional[Callable[[], None]] = None) -> bool:
+        """True when task `task_id` ended within `timeout_s`. on_tick runs every `every_s` while
+        it waits (to read the position on the way)."""
         deadline = time.monotonic() + timeout_s
         while task_id not in self._done_ids:
             left = deadline - time.monotonic()
-            if left <= 0 or not self._event.wait(left):
+            if left <= 0:
                 return False
+            if not self._event.wait(left if every_s is None else min(left, every_s)):
+                if on_tick is not None:
+                    on_tick()
+                continue
             self._event.clear()
         self._done_ids.discard(task_id)
         return True
@@ -104,15 +113,16 @@ class KCube:
     def get_position(self) -> float:
         return float(self._Decimal.ToSingle(self._device.Position))
 
-    def move_to(self, pos: float) -> float:
+    def move_to(self, pos: float, on_progress: Optional[Callable[[float], None]] = None) -> float:
+        """Move and return when there; on_progress(mm) gets the position on the way."""
         if abs(self.get_position() - float(pos)) < 1e-4:   # already there (0.1 um)
             return self.get_position()
         self._run(lambda done: self._device.MoveTo(self._Decimal(float(pos)), done),
-                  self._hw.move_timeout_s, f"the move to {float(pos):.4f} mm")
+                  self._hw.move_timeout_s, f"the move to {float(pos):.4f} mm", on_progress)
         return self.get_position()
 
-    def home(self) -> float:
-        self._run(lambda done: self._device.Home(done), self._hw.home_timeout_s, "homing")
+    def home(self, on_progress: Optional[Callable[[float], None]] = None) -> float:
+        self._run(lambda done: self._device.Home(done), self._hw.home_timeout_s, "homing", on_progress)
         return self.get_position()
 
     def set_backlash(self, value: float) -> float:
@@ -132,10 +142,18 @@ class KCube:
         finally:
             device.Disconnect()
 
-    def _run(self, start, timeout_s: float, what: str) -> None:
-        """Start a Kinesis task and wait for its completion callback; stop the stage on timeout."""
+    def _run(self, start, timeout_s: float, what: str, on_progress=None) -> None:
+        """Start a Kinesis task and wait for its completion callback; stop the stage on timeout.
+        on_progress(mm): the position, read every PROGRESS_S while the task runs."""
+        def tick():
+            try:
+                on_progress(self.get_position())
+            except Exception:       # a missed reading only delays the display
+                pass
+
         task_id = int(start(self._on_done))
-        if not self._waiter.wait(task_id, timeout_s):
+        if not self._waiter.wait(task_id, timeout_s, every_s=PROGRESS_S,
+                                 on_tick=tick if on_progress is not None else None):
             try:
                 self._device.StopImmediate()
             except Exception:

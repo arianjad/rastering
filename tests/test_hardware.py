@@ -129,6 +129,38 @@ def test_a_kcube_move_returns_when_the_stage_is_there_and_is_stopped_on_timeout(
     assert stuck.calls == [("MoveTo", 3.0), ("StopImmediate",)]
 
 
+def test_a_kcube_move_reports_where_the_stage_is_while_it_moves(monkeypatch):
+    """Harm stopped: during a move (up to 10 s) or a device home (up to 30 s) the window showed the
+    start position until the end, so the operator took a moving stage for a parked one (or the
+    GUI for hung). While Kinesis runs the move, its Position is read about every 0.2 s and handed
+    to on_progress."""
+    monkeypatch.setattr(hardware, "PROGRESS_S", 0.01)
+    dev = _KinesisDevice(move_s=0.1)
+    threading.Timer(0.04, lambda: setattr(dev, "Position", _Decimal(2.0))).start()   # half way
+    seen = []
+    assert _kcube(dev).move_to(3.0, on_progress=seen.append) == 3.0
+    assert 2.0 in seen
+
+
+def test_the_stage_shows_a_simulated_move_on_its_way(tmp_path):
+    """Harm stopped: the stage position and the crosshair froze for the whole of a move or a home
+    (the motor thread reads the position only when idle). A position on the way is reported
+    (marked moving, so trail and history keep only where the stage stopped), then the end."""
+    import motors_sim
+    from stage import Stage
+    seen = []
+    mx = motors_sim.SimulatedMotor("X", speed_mm_s=10.0, progress_s=0.01)
+    stage = Stage(mx, motors_sim.SimulatedMotor("Y"), (0.0, 12.0, 0.0, 12.0), on_position=seen.append)
+    try:
+        from stage import Command
+        assert stage.submit(Command("test move", "move", mm=(1.0, 0.0))).result(5).ok
+    finally:
+        stage.close(2.0)
+    on_the_way = [p for p in seen if p.moving]
+    assert on_the_way and all(0.0 < p.mm[0] < 1.0 for p in on_the_way)
+    assert (seen[-1].mm, seen[-1].moving) == ((1.0, 0.0), False)
+
+
 def test_a_kcube_start_up_error_is_not_hidden_by_the_clean_up(monkeypatch):
     """Harm stopped: a KCube that cannot connect (held by another program) and then also fails to
     disconnect showed only the disconnect error, so the operator chased the wrong fault. The

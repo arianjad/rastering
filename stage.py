@@ -8,7 +8,7 @@ BLACS x, y) is queued here and checked once, on the motor thread, just before it
       the edge).
 A refused move moves nothing; its words go back to the caller (BLACS or the window), which only
 shows them. Only the motor thread calls the motors. When the queue is idle the thread reads the
-position and reports it when it changed. The thread outlives any one job (an error is logged and
+position and reports it when it changed; during a move or a home the motor reports it on the way. The thread outlives any one job (an error is logged and
 the next job runs); close() drops the queued jobs, lets the one in flight end, then disconnects.
 
 Refusal codes BLACS can see are the menu's: raster_armed / raster_held / raster_running (a raster
@@ -44,10 +44,11 @@ RASTER_HOLDERS = {
 
 
 class Motor(Protocol):
-    """One stage axis [mm]. Called only from the motor thread; each call returns when done."""
+    """One stage axis [mm]. Called only from the motor thread; each call returns when done.
+    move_to / home call on_progress(mm) with the position on the way (about every 0.2 s)."""
     def get_position(self) -> float: ...
-    def move_to(self, pos: float) -> float: ...
-    def home(self) -> float: ...
+    def move_to(self, pos: float, on_progress: Optional[Callable[[float], None]] = None) -> float: ...
+    def home(self, on_progress: Optional[Callable[[float], None]] = None) -> float: ...
     def set_backlash(self, value: float) -> float: ...   # returns what the motor took
     def get_backlash(self) -> float: ...
     def disconnect(self) -> None: ...
@@ -68,6 +69,7 @@ class Result:
 class StagePosition:
     mm: XY                 # motor position [mm]
     px: Optional[XY]       # the same in image px; None without a calibration
+    moving: bool = False   # read on the way during a move or a home (not where it stopped)
 
 
 @dataclass
@@ -167,7 +169,7 @@ class Stage:
             self._calibration = cal
             pos = self._position
             if pos is not None:
-                self._position = StagePosition(pos.mm, cal.mm_to_px(*pos.mm) if cal else None)
+                self._position = StagePosition(pos.mm, cal.mm_to_px(*pos.mm) if cal else None, pos.moving)
                 pos = self._position
         if pos is not None:
             self._on_position(pos)
@@ -305,12 +307,12 @@ class Stage:
         if not cmd.quiet:
             self._log("info", f"{cmd.label} ...")
         if cmd.kind == "home":
-            self._motors[cmd.axis].home()
+            self._motors[cmd.axis].home(on_progress=self._on_the_way(cmd.axis))
         else:                                   # X then Y, never both at once
             if cmd.axis in (None, "X"):
-                self._motors["X"].move_to(target[0])
+                self._motors["X"].move_to(target[0], on_progress=self._on_the_way("X"))
             if cmd.axis in (None, "Y"):
-                self._motors["Y"].move_to(target[1])
+                self._motors["Y"].move_to(target[1], on_progress=self._on_the_way("Y"))
         mm = self._read_mm()
         self._set_position(mm, cmd.px)
         if not cmd.quiet:
@@ -354,16 +356,26 @@ class Stage:
     def _read_mm(self) -> XY:
         return float(self._motors["X"].get_position()), float(self._motors["Y"].get_position())
 
-    def _set_position(self, mm: XY, px: Optional[XY] = None) -> None:
+    def _on_the_way(self, axis: str) -> Callable[[float], None]:
+        """on_progress for a move of `axis`: show its reading [mm]; the other axis stands still."""
+        def show(value: float) -> None:
+            with self._lock:
+                pos = self._position
+            if pos is not None:
+                v = float(value)
+                self._set_position((v, pos.mm[1]) if axis == "X" else (pos.mm[0], v), moving=True)
+        return show
+
+    def _set_position(self, mm: XY, px: Optional[XY] = None, *, moving: bool = False) -> None:
         """Record where the stage is; a move in px keeps the point it was sent to as its px
         position until the motors report a different mm."""
         with self._lock:
             old = self._position
-            if px is None and old is not None and old.mm == mm:
+            if px is None and old is not None and old.mm == mm and old.moving == moving:
                 return
             cal = self._calibration
             if px is None and cal is not None:
                 px = cal.mm_to_px(*mm)
-            self._position = new = StagePosition(mm, px if cal is not None else None)
+            self._position = new = StagePosition(mm, px if cal is not None else None, moving)
         if new != old:
             self._on_position(new)

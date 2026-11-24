@@ -418,6 +418,8 @@ class RasterWindow(QtWidgets.QMainWindow):
         self._pos = pos
         self.bar.set_status(x_mm=pos.mm[0], y_mm=pos.mm[1])
         self.view.set_spot(pos.px)
+        if pos.moving:                       # on the way: shown, but trail and history keep stops only
+            return
         if pos.px is not None:
             self._trail.append(pos.px)
             self._draw_trail()
