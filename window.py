@@ -43,6 +43,7 @@ NEED_CAL = "Calibrate first (Setup)."
 NEED_PATTERN = "No pattern: set one up in Pattern."
 STEP_WHY = {"off": "Arm the pattern first (Arm here).", "armed": "BLACS steps this raster: Take back first.",
             "running": "A continuous run steps this raster: Stop it first."}
+JOG_NOT_CALIBRATED = "Not calibrated: arrows follow the stage axes; check the direction on the image."
 
 
 def gates(state: str, *, calibrated: bool, calibrating: bool, busy: bool, pattern_ok: bool,
@@ -69,6 +70,7 @@ def gates(state: str, *, calibrated: bool, calibrating: bool, busy: bool, patter
         "camera_geometry": need((off, "A raster is active: its path is in camera px, so the region and "
                                       "display are locked."), quiet),
         "home": need(idle),
+        "backlash": need(idle),        # changes how the motors move mid-path, and saves the calibration file
         "moves": need((off, "A raster is active: stop it before moving the stage by hand.")),
         "user_home_here": need((not busy, "The stage is moving: wait until it stops.")),
         "start": runnable,
@@ -105,6 +107,14 @@ def jog_vector_mm(sx: int, sy: int, step_mm: float, geometry: DisplayGeometry, M
     return -row * step_mm, -col * step_mm
 
 
+def _took(future) -> bool:
+    """A stage job's Future ended with an ok Result (False: it failed or was cancelled)."""
+    try:
+        return bool(future.result().ok)
+    except Exception:
+        return False
+
+
 def _gate(widget: QtWidgets.QWidget, on: bool, why: str) -> None:
     """Enable a control; while disabled its tooltip says why."""
     if widget.property("tip") is None:
@@ -128,6 +138,8 @@ class RasterWindow(QtWidgets.QMainWindow):
     with, from the camera settings file. remember_theme(light): stores the theme choice (main
     passes theme.save_light_pref; tests and scripts pass nothing)."""
 
+    _backlash_not_set = QtCore.pyqtSignal(str)   # axis whose backlash Set failed (sent from the motor thread)
+
     def __init__(self, controller, camera, *, camera_config: ThorCamConfig, geometry: DisplayGeometry,
                  camera_file: str = "", log_dir: str = os.path.join(HERE, "logs"),
                  defaults_path: str = SETTINGS_DEFAULTS_FILE,
@@ -148,8 +160,10 @@ class RasterWindow(QtWidgets.QMainWindow):
         self._trail = collections.deque(maxlen=TRAIL_KEEP)
         self._history = None                 # the open position-history file
         self._fill_from_frame = True         # bounds and spiral centre from the first frame size
-        self._backlash_to_save: set = set()
+        self._backlash_to_save: set = set()   # axes of the last backlash Set not answered yet
+        self._backlash_taken = False         # one of them took its value: save the file when all answered
         self._goto_shown = False             # a Go to x, y target was clicked or typed
+        self._spec = None                    # the pattern last built (raster_paths.RasterSpec)
         self._pattern_error = ""
         self._drawn: dict = {}               # what the image shows now (big point lists: by identity)
         self.setWindowTitle("Rastering")
@@ -252,6 +266,7 @@ class RasterWindow(QtWidgets.QMainWindow):
         c.calibration_changed.connect(self._on_calibration)
         c.calibration_progress.connect(self._on_cal_progress)
         c.backlash_changed.connect(self._on_backlash)
+        self._backlash_not_set.connect(self._backlash_answered)
         c.user_home_changed.connect(self._on_user_home)
 
         cam = self.camera
@@ -298,8 +313,8 @@ class RasterWindow(QtWidgets.QMainWindow):
         r.hand_btn.clicked.connect(c.hand_to_blacs)
         r.take_back_btn.clicked.connect(c.take_back)
         r.rearm_btn.clicked.connect(lambda: c.arm())
-        r.goto_btn.clicked.connect(lambda: c.go_to_point(self._snap.selected_index))
-        r.point_box.valueChanged.connect(lambda n: c.select_point(n - 1) if n > 0 else None)
+        r.goto_btn.clicked.connect(self._go_to_point)
+        r.point_box.valueChanged.connect(lambda n: c.select_point(n) if n >= 0 else None)
         r.record.toggled.connect(self._record_history)
         r.trail.valueChanged.connect(lambda *_: self._draw_trail())
 
@@ -368,6 +383,7 @@ class RasterWindow(QtWidgets.QMainWindow):
                              ("clear_calibration", (st.clear_btn,)), ("save_calibration", (st.save_btn,)),
                              ("restore_camera", (st.restore_camera_btn,)),
                              ("home", (st.home_x_btn, st.home_y_btn, st.home_both_btn)),
+                             ("backlash", (st.backlash_set_btn,)),
                              ("user_home_here", (st.user_home_here_btn,)),
                              ("start", (r.start_btn,)), ("arm_blacs", (r.arm_blacs_btn,)),
                              ("step", (r.step_btn,)), ("stop", (r.stop_btn,)), ("hand", (r.hand_btn,)),
@@ -378,6 +394,7 @@ class RasterWindow(QtWidgets.QMainWindow):
         r.rearm_btn.setVisible(s.path_edited)
         r.set_primary(getattr(r, PRIMARY.get(s.state, "start") + "_btn"))
         self.jog.set_moves_enabled(*g["moves"])
+        self.jog.show_note("" if self.ctl.calibration is not None else JOG_NOT_CALIBRATED)
         self.camera_panel.set_geometry_enabled(*g["camera_geometry"])
         self._moving.setVisible(self._busy and s.state == "off")
 
@@ -426,6 +443,10 @@ class RasterWindow(QtWidgets.QMainWindow):
         self._refresh()
 
     def _on_calibration(self, *_) -> None:
+        # The calibration changed (loaded, fitted, cleared or saved): a backlash answer still to
+        # come is not saved into it; after a load the motors take that file's backlash next.
+        self._backlash_to_save.clear()
+        self._backlash_taken = False
         self._update_unreachable()
         self._show_goto()
         if self._points:
@@ -442,9 +463,18 @@ class RasterWindow(QtWidgets.QMainWindow):
     def _on_backlash(self, axis: str, value: float) -> None:
         self.setup.show_backlash(*self.ctl.backlash_mm, fill=axis)
         if axis in self._backlash_to_save:
-            self._backlash_to_save.discard(axis)
-            if not self._backlash_to_save:
-                self._keep_in_calibration("The backlash")
+            self._backlash_taken = True
+            self._backlash_answered(axis)
+
+    def _backlash_answered(self, axis: str) -> None:
+        """One axis of the backlash Set took its value or failed: once all have answered, save the
+        calibration file if any took it."""
+        if axis not in self._backlash_to_save:
+            return
+        self._backlash_to_save.discard(axis)
+        if not self._backlash_to_save and self._backlash_taken:
+            self._backlash_taken = False
+            self._keep_in_calibration("The backlash")
 
     def _on_user_home(self, *_) -> None:
         self.setup.show_user_home(*self.ctl.user_home_mm)
@@ -577,12 +607,15 @@ class RasterWindow(QtWidgets.QMainWindow):
             self.setup.user_home_y.set_quietly(self._pos.mm[1])
 
     def _set_backlash(self) -> None:
-        now = self.ctl.backlash_mm
+        now, sent = self.ctl.backlash_mm, False
         for axis, box, v in (("X", self.setup.backlash_x, now[0]), ("Y", self.setup.backlash_y, now[1])):
-            if v is None or abs(box.value() - v) > 1e-9:
+            value = box.value()
+            if v is None or abs(value - v) > 1e-9:
                 self._backlash_to_save.add(axis)
-                self.ctl.set_backlash(axis, box.value())
-        if not self._backlash_to_save:
+                self.ctl.set_backlash(axis, value).add_done_callback(
+                    lambda f, axis=axis: None if _took(f) else self._backlash_not_set.emit(axis))
+                sent = True
+        if not sent:
             self.log.add("Backlash unchanged: the motors already have these values.")
 
     def _keep_in_calibration(self, what: str) -> None:
@@ -615,7 +648,7 @@ class RasterWindow(QtWidgets.QMainWindow):
     # ================================================================ pattern and run
     def _pattern_changed(self) -> None:
         """A pattern or run option changed: rebuild the points, show them, send the pending plan."""
-        spec = self.pattern.spec()
+        self._spec = spec = self.pattern.spec()
         try:
             self._points, error = points_from_spec(spec), ""
         except ValueError as e:
@@ -644,14 +677,20 @@ class RasterWindow(QtWidgets.QMainWindow):
             self._drawn["pending"] = pending
             self.view.set_pending_pattern(pending)
         self.view.set_pattern_corners(self.pattern.corners() if show and kind == "hull" else [])
-        self.view.set_scan_bounds(self.pattern.bounds() if show and kind in USES_BOUNDS else None)
+        bounds = self._spec.bounds if self._spec is not None else None   # the drawn pattern's, not half-typed
+        self.view.set_scan_bounds(bounds if show and kind in USES_BOUNDS else None)
         on = self.pattern.show_direction.isChecked()
         if on != self._drawn.get("order"):
             self._drawn["order"] = on
             self.view.set_direction_lines(on)
 
+    def _go_to_point(self) -> None:
+        n = self.run.point_box.value()       # a number typed but not entered is picked first
+        if n >= 0:
+            self.ctl.go_to_point(n)
+
     def _draw_trail(self) -> None:
-        n = self.run.trail.value()
+        n = self.run.trail_len()             # runs on every position: never takes half-typed text
         self.view.set_trail(list(self._trail)[-n:] if n > 0 else [])
 
     def _record_history(self, on: bool) -> None:
@@ -677,24 +716,25 @@ class RasterWindow(QtWidgets.QMainWindow):
             self._write_history(self._pos)
 
     def _escape(self) -> None:
-        """Esc: stop the raster (and stop collecting calibration spots)."""
+        """Esc: stop the raster (and stop collecting calibration spots). Always asks the controller:
+        BLACS may have armed a raster the window has not drawn yet; with none, nothing happens."""
         if self._cal_progress != (0, 0):
             self.ctl.cancel_calibration()
-        if self._snap.state != "off":
-            self.ctl.stop_raster()
+        self.ctl.stop_raster()
 
     # ================================================================ the image
     def _on_click(self, x: float, y: float, modifiers: int) -> None:
-        """Calibrating: a calibration spot. Ctrl or the Run step: pick the nearest path point.
-        Pattern step: a hull corner or the spiral centre. Setup step: the Go to x, y target."""
+        """Calibrating: a calibration spot. Ctrl, or the Run step with a raster armed: pick the
+        nearest path point. Pattern step: a hull corner or the spiral centre. Otherwise (Setup, or
+        Run with nothing armed): the Go to x, y target."""
         if self._cal_progress != (0, 0):
             self._cal_clicks.append((x, y))
             self.view.set_calibration_clicks(self._cal_clicks)
             self.ctl.add_calibration_click(x, y)
             return
         step = self.rail.current()
-        if modifiers & int(QtCore.Qt.ControlModifier) or step == RUN:
-            path = self._snap.path
+        path = self.ctl.raster_snapshot().path
+        if modifiers & int(QtCore.Qt.ControlModifier) or (step == RUN and path):
             self.ctl.select_point(nearest_index(path, x, y) if path else 0)
             return
         if step == PATTERN:

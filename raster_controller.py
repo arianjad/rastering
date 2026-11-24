@@ -244,7 +244,7 @@ class SystemController(QObject):
             with self._lock:
                 s = self._session
                 i, pt, taken = s.go_to(index)
-                self._stage.submit(Command(f"Go to raster point {i + 1}/{len(s.path)}", "move",
+                self._stage.submit(Command(f"Go to raster point {i} of {len(s.path)}", "move",
                                            px=pt, raster_run=s.run))
                 snap = s.snapshot()
         except Refused as r:
@@ -275,9 +275,9 @@ class SystemController(QObject):
         except Refused as r:
             return self._refused(r)
         self.raster_changed.emit(snap)
-        nxt = (snap.point_index + 1) % len(snap.path) + 1
+        nxt = (snap.point_index + 1) % len(snap.path)
         self.message.emit("info", ("Continuous run stopped; " if was_running else "")
-                          + f"BLACS steps the raster from point {nxt}/{len(snap.path)}.")
+                          + f"BLACS steps the raster from point {nxt} of {len(snap.path)}.")
         return Result(True)
 
     def take_back(self) -> Result:
@@ -490,21 +490,21 @@ class SystemController(QObject):
         """Step the cursor for `by` and queue the move (caller holds the lock)."""
         s = self._session
         i, pt, wrapped = s.next_point(by)
-        future = self._stage.submit(Command(f"Raster point {i + 1}/{len(s.path)}", "move", px=pt,
+        future = self._stage.submit(Command(f"Raster point {i} of {len(s.path)}", "move", px=pt,
                                             raster_run=s.run, quiet=by != GUI))
         return i, pt, wrapped, future, s.snapshot()
 
     def _stepped(self, snap: RasterSnapshot, wrapped: bool, who: str) -> None:
         self.raster_changed.emit(snap)
         if wrapped:
-            self.message.emit("info", f"{who}Raster path done; started again at point 1.")
+            self.message.emit("info", f"{who}Raster path done; started again at point 0.")
 
     def _queue_run_point_locked(self) -> bool:
         """Queue the continuous run's next point (caller holds the lock). Returns wrapped."""
         s = self._session
         i, pt, wrapped = s.next_point(RUN)
         run = s.run
-        self._stage.submit(Command(f"Raster point {i + 1}/{len(s.path)}", "move", px=pt, raster_run=run,
+        self._stage.submit(Command(f"Raster point {i} of {len(s.path)}", "move", px=pt, raster_run=run,
                                    quiet=True, then=lambda res: self._after_run_point(res, run)))
         return wrapped
 

@@ -114,7 +114,7 @@ def test_a_continuous_run_loops_on_the_motor_thread_until_stop(gui):
     assert xs[:13] == [1.0, 1.1, 1.2, 1.2, 1.1, 1.0] * 2 + [1.0]
     time.sleep(0.05)
     assert gui.moves("X") == xs
-    assert ("info", "Raster path done; started again at point 1.") in gui.messages
+    assert ("info", "Raster path done; started again at point 0.") in gui.messages
 
 
 def test_stop_cuts_a_continuous_runs_wait_short(gui):
@@ -153,7 +153,7 @@ def test_a_motor_failure_halts_a_continuous_run_with_its_words(gui):
     gui.x.fail = "KCube X lost"
     gui.plan(continuous=True)
     gui.ctl.arm()
-    wait_until(lambda: any(k == "error" and t.startswith("Raster halted: Raster point 1/3 failed: KCube X lost")
+    wait_until(lambda: any(k == "error" and t.startswith("Raster halted: Raster point 0 of 3 failed: KCube X lost")
                            for k, t in gui.messages))
     assert gui.ctl.raster_snapshot().state == "off"
     assert gui.moves() == []

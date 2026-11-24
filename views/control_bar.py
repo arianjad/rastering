@@ -34,13 +34,15 @@ def state_words(state: str) -> Tuple[str, str, str]:
 
 
 def point_words(index: Optional[int], total: Optional[int]) -> Tuple[str, str]:
-    """('12 of 48', tooltip) from a 0-based point index (the shot file's point_index)."""
+    """('11 of 48', tooltip): the point index as the shot file's point_index (first point 0) and
+    the path length (a count)."""
     if not total or total <= 0:
         return "—", "No path armed."
     if index is None or index < 0:
         return f"— of {total}", f"Path of {total} points armed; no point taken yet."
-    return (f"{index + 1} of {total}",
-            f"Point {index + 1} of {total} (point_index {index} in the shot file, which counts from 0).")
+    return (f"{index} of {total}",
+            f"Point {index} of a {total}-point path: the same number as point_index in the shot file "
+            "(the first point is 0).")
 
 
 def calibration_words(state: str, clicks: Optional[Tuple[int, int]] = None) -> Tuple[str, str, str]:

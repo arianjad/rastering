@@ -34,13 +34,14 @@ def test_state_block_says_who_moves_the_stage_by_word_and_shape():
                     "armed": ("ARMED FOR BLACS", "auto"), "local": ("HELD AT GUI", "held")}
 
 
-def test_point_counts_from_one_and_names_the_shot_file_index():
-    """'Point 12 of 48' on screen is point_index 11 in the shot file; the tooltip
-    says so, so nobody matches a shot to the wrong site."""
+def test_point_is_the_shot_files_point_index():
+    """Harm stopped: the bar counted points from 1 and the shot file from 0, so a shot was
+    matched to the spot next to the one it hit. 'Point 11 of 48' on screen is point_index 11 in
+    the shot file, and the tooltip says so."""
     bar = ControlBar()
     bar.set_status(point_index=11, path_len=48)
-    assert bar.point.value.text() == "12 of 48"
-    assert "point_index 11" in bar.point.toolTip()
+    assert bar.point.value.text() == "11 of 48"
+    assert "same number as point_index in the shot file" in bar.point.toolTip()
     bar.set_status(point_index=-1, path_len=0)
     assert bar.point.value.text() == "—"
 

@@ -98,6 +98,10 @@ class JogPad(QtWidgets.QWidget):
         self.reason.setWordWrap(True)
         self.reason.hide()
         v.addWidget(self.reason)
+        self.note = label("", role="small")
+        self.note.setWordWrap(True)
+        self.note.hide()
+        v.addWidget(self.note)
         self._restyle()
         self._retip()
         theme.changed().connect(self._restyle)
@@ -128,3 +132,8 @@ class JogPad(QtWidgets.QWidget):
             b.setEnabled(bool(on))
         self.reason.setText(reason)
         self.reason.setVisible(not on and bool(reason))
+
+    def show_note(self, text: str) -> None:
+        """One quiet line under the pad ("" hides it)."""
+        self.note.setText(text)
+        self.note.setVisible(bool(text))

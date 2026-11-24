@@ -73,7 +73,11 @@ def _guard_wheel(w: QtWidgets.QWidget) -> None:
 
 class NumberBox(QtWidgets.QDoubleSpinBox):
     """Number entry: right-aligned, unit suffix, no arrow buttons (type, arrow keys
-    or the wheel once focused), and valueChanged only on Enter or leaving the box."""
+    or the wheel once focused), and valueChanged only on Enter or leaving the box.
+
+    value() takes typed text first, as Enter would (and emits valueChanged if it changed), so a
+    button that reads the box acts on the number shown, even a button that takes no focus.
+    committed() is the value last taken, without touching what is being typed: for redraws."""
 
     def __init__(self, decimals: int = 3, minimum: float = 0.0, maximum: float = 1e6,
                  unit: str = "", step: float = 1.0, parent=None):
@@ -89,6 +93,13 @@ class NumberBox(QtWidgets.QDoubleSpinBox):
         self.setAccelerated(True)
         _guard_wheel(self)
 
+    def value(self) -> float:
+        self.interpretText()
+        return super().value()
+
+    def committed(self) -> float:
+        return super().value()
+
     def set_quietly(self, value: float) -> None:
         """Show a value without emitting valueChanged (for values the program sets)."""
         self.blockSignals(True)
@@ -97,7 +108,7 @@ class NumberBox(QtWidgets.QDoubleSpinBox):
 
 
 class IntBox(QtWidgets.QSpinBox):
-    """Integer twin of NumberBox."""
+    """Integer twin of NumberBox (value() takes typed text first; committed() does not)."""
 
     def __init__(self, minimum: int = 0, maximum: int = 1_000_000, unit: str = "",
                  step: int = 1, parent=None):
@@ -110,6 +121,13 @@ class IntBox(QtWidgets.QSpinBox):
         self.setButtonSymbols(QtWidgets.QAbstractSpinBox.NoButtons)
         self.setKeyboardTracking(False)
         _guard_wheel(self)
+
+    def value(self) -> int:
+        self.interpretText()
+        return super().value()
+
+    def committed(self) -> int:
+        return super().value()
 
     def set_quietly(self, value: int) -> None:
         self.blockSignals(True)

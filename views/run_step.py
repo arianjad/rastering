@@ -87,10 +87,10 @@ class RunStep(QtWidgets.QWidget):
         # --- go to a point ---
         p = Section("Go to a point")
         g = p.body
-        self.point_box = IntBox(0, 0)
+        self.point_box = IntBox(-1, -1)          # -1: none picked, shown as "—"
         self.point_box.setSpecialValueText("—")
-        self.point_box.setToolTip("Pick a point of the armed path by number (nothing moves). "
-                                  "point_index in the shot file is this number minus 1.")
+        self.point_box.setToolTip("Pick a point of the armed path by number (nothing moves): the same "
+                                  "number as point_index in the shot file (the first point is 0).")
         self.point_of = label("of —", tone="label")
         self.goto_btn = _button("Go to selected point", "Move to the picked point; the next step "
                                 "continues after it. Takes the raster back from BLACS.")
@@ -143,8 +143,8 @@ class RunStep(QtWidgets.QWidget):
             sentence += f" {dropped} pattern points were outside the stage travel and left out."
         self.sentence.setText(sentence)
         self.point_box.blockSignals(True)          # a shorter path must not pick a point by clamping
-        self.point_box.setMaximum(max(0, path_len))
-        self.point_box.setValue(selected + 1 if selected >= 0 else 0)
+        self.point_box.setMaximum(path_len - 1)
+        self.point_box.setValue(selected if selected >= 0 else -1)
         self.point_box.blockSignals(False)
         self.point_of.setText(f"of {path_len}" if path_len else "of —")
         self.shots.setText(f"{shots}  (set by BLACS)")
@@ -163,6 +163,10 @@ class RunStep(QtWidgets.QWidget):
     def settings(self) -> Dict[str, Any]:
         return {"continuous": self.continuous.isChecked(), "pingpong": self.pingpong.isChecked(),
                 "delay_s": self.delay.value(), "trail": self.trail.value()}
+
+    def trail_len(self) -> int:
+        """Positions the trail shows: the number last taken, not one being typed (for redraws)."""
+        return self.trail.committed()
 
     def apply_settings(self, d: Dict[str, Any]) -> None:
         for key, box in (("continuous", self.continuous), ("pingpong", self.pingpong)):
