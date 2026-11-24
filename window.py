@@ -47,7 +47,7 @@ NO_USER_HOME = "No user home set: set one in Setup (Stage, User home)."
 JOG_NOT_CALIBRATED ="Not calibrated: arrows follow the stage axes; check the direction on the image."
 
 
-def gates(state: str, *, calibrated: bool, calibrating: bool, busy: bool, pattern_ok: bool,
+def gates(state: str, *, calibrated: bool, calibrating: bool, pattern_ok: bool,
           edited: bool, selected: bool, user_home: bool = True) -> Dict[str, Tuple[bool, str]]:
     """Every gated control: name -> (enabled, why not). The one place that decides it."""
     off = state == "off"
@@ -67,14 +67,15 @@ def gates(state: str, *, calibrated: bool, calibrating: bool, busy: bool, patter
         "use_last": need(),
         "clear_calibration": need(),
         "save_calibration": need((calibrated, "No calibration to save.")),
-        "restore_camera": need(idle, quiet),
-        "camera_geometry": need((off, "A raster is active: its path is in camera px, so the region and "
-                                      "display are locked."), quiet),
+        # Locked only while clicks are collected: clicks in two pixel frames make a fit that aims
+        # nowhere. During a raster the stale-calibration mark shows a camera change.
+        "restore_camera": need(quiet),
+        "camera_geometry": need(quiet),
         "home": need(),                 # during a raster: done, red warning (stage.py)
-        "backlash": need(idle),        # changes how the motors move mid-path, and saves the calibration file
+        "backlash": need(),
         "moves": need(),                # during a raster: done, with the warning it earns (stage.py)
         "go_user_home": need((user_home, NO_USER_HOME)),
-        "user_home_here": need((not busy, "The stage is moving: wait until it stops.")),
+        "user_home_here": need(),       # copies the position shown into the boxes; Set is separate
         "start": runnable,
         "arm_blacs": runnable,
         "step": need((state == "local", STEP_WHY.get(state, ""))),
@@ -385,7 +386,7 @@ class RasterWindow(QtWidgets.QMainWindow):
     def _apply_gates(self) -> None:
         s = self._snap
         g = gates(s.state, calibrated=self.ctl.calibration is not None,
-                  calibrating=self._cal_progress != (0, 0), busy=self._busy, pattern_ok=bool(self._points),
+                  calibrating=self._cal_progress != (0, 0), pattern_ok=bool(self._points),
                   edited=s.path_edited, selected=s.selected_index >= 0 or self.run.point_typed(),
                   user_home=None not in self.ctl.user_home_mm)
         st, r = self.setup, self.run

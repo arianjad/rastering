@@ -61,9 +61,9 @@ the reason.
 | Apply camera settings from cal | Kept: "Use the calibration's camera settings", shown when the calibration is stale |
 | Matrix spin boxes M11..M22, bX, bY | Changed: read-only M [mm/px], b [mm] and scale |
 | Device Home X, Y, Both | Kept; during a raster it is done, with a red line (the stage sweeps to 0 mm under the laser) |
-| User home readings, setpoints, Set X / Set Y | Kept: one Set for x and y; "Here" fills them from the stage; saved into the calibration file at once. Until one is set it reads "not set" and Go to user home is greyed (no (0, 0) default) |
+| User home readings, setpoints, Set X / Set Y | Kept: one Set for x and y; "Here" fills them from the stage (also while it moves); saved into the calibration file at once. Until one is set it reads "not set" and Go to user home is greyed (no (0, 0) default) |
 | User home Go X / Go Y | Dropped: "Go to user home" (both axes) under Move stage, or Go to x, y |
-| Backlash readings, setpoints, Set X / Set Y | Kept: one Set; saved into the calibration file once the motors answer (an axis that fails is not waited for; a calibration loaded meanwhile is not written); greyed while a raster is active |
+| Backlash readings, setpoints, Set X / Set Y | Kept: one Set; saved into the calibration file once the motors answer (an axis that fails is not waited for; a calibration loaded meanwhile is not written); live during a raster |
 | Display Options group | Merged |
 | Show current position | Dropped: the stage crosshair is always shown |
 | Display points + Last N | Merged: "Trail on image", last N positions (Run step) |
@@ -87,10 +87,10 @@ the reason.
 | Exposure slider + box, range label | Kept (logarithmic slider, ms) |
 | Gain, Gamma | Kept |
 | AOI width, height, start x, start y | Kept: "Region of interest" [px] |
-| Apply AOI | Kept: "Apply region", enabled once edited; locked while a raster is active |
+| Apply AOI | Kept: "Apply region", enabled once edited; locked only while calibration clicks are collected (during a raster the stale-calibration mark shows a change) |
 | Center | Kept: "Centre on sensor" |
 | Sensor size label | Kept |
-| Rotation, Flip X, Flip Y | Kept: Rotation, Mirror left–right, Mirror up–down; locked while a raster is active |
+| Rotation, Flip X, Flip Y | Kept: Rotation, Mirror left–right, Mirror up–down; locked only while calibration clicks are collected |
 | Loaded: label | Kept: file name under "Camera settings file" |
 | Save Settings, Load Config, Revert | Kept: Save as…, Load…, Revert |
 

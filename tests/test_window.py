@@ -126,7 +126,7 @@ def test_buttons_offer_only_what_the_raster_state_allows(make):
     win.run.start_btn.click()                                   # step mode: held at the GUI
     pump_until(lambda: win.bar.status()["state"] == "local")
     assert run_buttons(win) == {"step", "stop", "hand"}
-    assert hand_moves(win) == every_move - {"backlash set"}
+    assert hand_moves(win) == every_move
     assert not win.jog.reason.isVisibleTo(win)
 
     win.run.hand_btn.click()
@@ -134,7 +134,7 @@ def test_buttons_offer_only_what_the_raster_state_allows(make):
     assert run_buttons(win) == {"stop", "take_back"}
     assert win.run.step_btn.toolTip() == "BLACS steps this raster: Take back first."
     assert win.bar.state_block.text() == "ARMED FOR BLACS"
-    assert hand_moves(win) == every_move - {"backlash set"}
+    assert hand_moves(win) == every_move
 
     win.run.stop_btn.click()
     win.run.continuous.setChecked(True)
@@ -142,7 +142,7 @@ def test_buttons_offer_only_what_the_raster_state_allows(make):
     win.run.start_btn.click()                                   # a continuous run
     pump_until(lambda: win.bar.status()["state"] == "running")
     assert run_buttons(win) == {"stop", "hand"}
-    assert hand_moves(win) == every_move - {"backlash set"}
+    assert hand_moves(win) == every_move
 
     win.run.stop_btn.click()
     win.setup.clear_btn.click()
@@ -170,6 +170,26 @@ def test_calibration_buttons_stay_live_during_a_raster_and_arm_while_collecting_
     assert all(b.isEnabled() for b in (st.load_btn, st.use_last_btn, st.clear_btn))
     assert not win.camera_panel.load_btn.isEnabled()
     assert win.camera_panel.load_btn.toolTip() == "Finish or cancel the calibration first."
+
+
+def test_camera_backlash_and_here_stay_live_during_a_raster_or_a_move(make):
+    """Harm stopped: the camera region, rotation, mirror, settings Load / Revert, "Use the
+    calibration's camera settings" and backlash Set were locked during a raster, and user home
+    "Here" while the stage moved, though none of them moves the stage off the path: px -> mm comes
+    from the calibration, and the stale-calibration mark shows a camera change. The operator had
+    to stop a raster to fix the image or the backlash. All stay live, with no message."""
+    rig, win = make()
+    win.run.arm_blacs_btn.click()
+    pump_until(lambda: win.bar.status()["state"] == "armed")
+    cp, st = win.camera_panel, win.setup
+    assert all(w.isEnabled() for w in (cp._roi_group, cp._disp_group, cp.load_btn, st.restore_camera_btn,
+                                       st.backlash_set_btn))
+    rig.x.gate = threading.Event()                    # the stage is moving
+    rig.ctl.jog_mm(0.1, 0.0)
+    assert rig.x.moving.wait(2)
+    pump_until(lambda: win._busy)
+    assert st.user_home_here_btn.isEnabled()
+    rig.x.gate.set()
 
 
 def test_a_plain_warning_is_not_red_and_a_red_warning_is(make):
