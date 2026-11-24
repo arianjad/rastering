@@ -146,10 +146,14 @@ class RunStep(QtWidgets.QWidget):
         if dropped:
             sentence += f" {dropped} pattern points were outside the stage travel and left out."
         self.sentence.setText(sentence)
-        self.point_box.blockSignals(True)          # a shorter path must not pick a point by clamping
-        self.point_box.setMaximum(path_len - 1)
-        self.point_box.setValue(selected if selected >= 0 else -1)
-        self.point_box.blockSignals(False)
+        box, want = self.point_box, (path_len - 1, selected if selected >= 0 else -1)
+        # Redrawn only when the path or the pick changed, never while the operator types in it
+        # (a redraw on every BLACS shot wiped a half-typed number).
+        if not box.hasFocus() and (box.maximum(), box.committed()) != want:
+            box.blockSignals(True)                 # a shorter path must not pick a point by clamping
+            box.setMaximum(want[0])
+            box.setValue(want[1])
+            box.blockSignals(False)
         self.point_of.setText(f"of {path_len}" if path_len else "of —")
         self.shots.setText(f"{shots}  (set by BLACS)")
 

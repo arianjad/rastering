@@ -320,6 +320,7 @@ class RasterWindow(QtWidgets.QMainWindow):
         r.rearm_btn.clicked.connect(lambda: c.arm())
         r.goto_btn.clicked.connect(self._go_to_point)
         r.point_box.valueChanged.connect(lambda n: c.select_point(n) if n >= 0 else None)
+        r.point_box.editingFinished.connect(self._refresh)    # not redrawn while typed in: catch up on leaving
         r.record.toggled.connect(self._record_history)
         r.trail.valueChanged.connect(lambda *_: self._draw_trail())
 

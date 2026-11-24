@@ -268,6 +268,20 @@ def test_a_point_index_from_the_shot_file_goes_to_that_point(make):
     assert "point_index" in win.run.point_box.toolTip()
 
 
+def test_a_point_number_being_typed_survives_a_blacs_shot(make):
+    """Harm stopped: while BLACS stepped the raster, every shot redrew the Point box and wiped the
+    number the operator was typing ("7" became "—"), so Go to selected point went nowhere or to
+    another point. What is typed stays until the operator enters it or leaves the box."""
+    rig, win = make(blacs=True)
+    win._show_step(RUN)
+    assert rig.client.press("arm")["path_len"] == 3
+    pump_until(lambda: win.bar.status()["state"] == "armed")
+    type_into(win.run.point_box, "2")
+    assert rig.client.press("next_point")["point_index"] == 0
+    pump_until(lambda: win.bar.status()["point_index"] == 0)
+    assert win.run.point_box.text() == "2"
+
+
 def test_a_click_on_the_run_step_with_nothing_armed_sets_the_go_to_target(make):
     """Harm stopped: on the Run step with nothing armed, a click on the image (meant as "go
     there", as on Setup) gave a red refusal; red lines that are not faults teach the operator to
