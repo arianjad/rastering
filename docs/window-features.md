@@ -57,7 +57,7 @@ the reason.
 | Calibrate (Affine) | Kept: "Calibrate"; "Cancel calibration" (also Esc) while collecting; "spot 2 of 3" guidance |
 | Revert to Last | Kept: "Use last" |
 | Save Calibration As… | Kept: "Save as…". Dropped: the notes dialog (fits note their spots; the file name says the rest) |
-| Load Calibration… | Kept: "Load…". A file whose matrix condition is above 10 loads with a warning (a fresh fit that far off is refused); a singular or non-finite matrix cannot be used |
+| Load Calibration… | Kept: "Load…". A file (or a fresh fit) whose matrix condition is above 10 is used with a warning; a singular or non-finite matrix cannot be used |
 | Apply camera settings from cal | Kept: "Use the calibration's camera settings", shown when the calibration is stale |
 | Matrix spin boxes M11..M22, bX, bY | Changed: read-only M [mm/px], b [mm] and scale |
 | Device Home X, Y, Both | Kept; during a raster it is done, with a red line (the stage sweeps to 0 mm under the laser) |

@@ -29,10 +29,10 @@ LAST_CALIBRATION_POINTER = os.path.join(HERE, "last_calibration_state.json")
 # [mm]: with less, the fit has no information on that axis (a stage moved in x only gave
 # "scale 1.9e-09 mm/px").
 MIN_STAGE_SPAN_MM = 0.010
-# A fresh fit is refused above this condition number (largest / smallest singular value); a
-# calibration file above it loads with a warning. Camera pixels are square and the stage axes
-# square to each other, so a real fit is near 1 (the lab's is 1.4; a camera viewing the target at
-# 80 deg would give 6); far above means the stage positions lay (almost) on one line.
+# A fit or a calibration file above this condition number (largest / smallest singular value) is
+# used with a warning. Camera pixels are square and the stage axes square to each other, so a real
+# fit is near 1 (the lab's is 1.4; a camera viewing the target at 80 deg would give 6); far above
+# means the stage positions lay (almost) on one line.
 MAX_MATRIX_COND = 10.0
 # Above this (or not finite) the matrix has no inverse worth the name: never usable.
 SINGULAR_COND = 1e12
@@ -62,8 +62,7 @@ class AffineCalibration:
         if not cond <= limit:
             raise UnusableMatrix(
                 f"the stage positions at the clicks lie (almost) on one line (matrix condition {cond:.3g}, more "
-                f"than {MAX_MATRIX_COND:g}): move the stage in both x and y between clicks, so the spots form "
-                "a triangle",
+                f"than {limit:g}): move the stage in both x and y between clicks, so the spots form a triangle",
                 "it holds a value that is not a number" if not finite else
                 "it maps the image onto a line (singular)" if not cond <= SINGULAR_COND else
                 f"its condition number is {cond:.3g}, more than {limit:g}: it maps the image onto (almost) a line")
@@ -112,7 +111,8 @@ def fit_affine(px_points: Sequence[XY], mm_points: Sequence[XY]) -> Tuple[Affine
     params, _, rank, _sv = np.linalg.lstsq(A, rhs, rcond=None)
     if rank < 6:
         raise ValueError("the clicked spots lie on one line: click spots that form a triangle")
-    cal = AffineCalibration([[params[0], params[1]], [params[3], params[4]]], [params[2], params[5]])
+    cal = AffineCalibration([[params[0], params[1]], [params[3], params[4]]], [params[2], params[5]],
+                            max_cond=None)      # above MAX_MATRIX_COND: used, the controller warns
     scale = float(np.sqrt(abs(np.linalg.det(cal.M))))
     return cal, f"{n} spots, scale {scale:.4g} mm/px"
 

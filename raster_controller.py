@@ -450,10 +450,7 @@ class SystemController(QObject):
             return self._refused(Refused("bad_calibration_file", f"could not load {path}: {e}"))
         extra = ", with camera settings" if cal.camera_settings is not None else ""
         self.message.emit("info", f"Loaded calibration from {cal.path}{extra}.")
-        if cal.affine.cond > MAX_MATRIX_COND:
-            self.message.emit("warning", f"{os.path.basename(cal.path)}: its matrix condition is {cal.affine.cond:.3g}, "
-                                         f"more than {MAX_MATRIX_COND:g} (a fit that far off is refused): it maps "
-                                         "the image onto almost a line, so px moves may land far from the spot.")
+        self._warn_condition(os.path.basename(cal.path), cal.affine)
         return self._apply(cal)
 
     def save_calibration(self, path: str, *, camera_settings: Optional[Dict[str, Any]] = None,
@@ -654,6 +651,14 @@ class SystemController(QObject):
             saved = self.calibration_file
             where = f"; saved to {saved.path}" if saved is not None and saved.path else ""
             self.message.emit("info", f"Calibration fitted: {summary}{where}.")
+            self._warn_condition("The fit", affine)
+
+    def _warn_condition(self, what: str, affine: AffineCalibration) -> None:
+        """One plain line when a calibration in use is above MAX_MATRIX_COND (a fit or a file)."""
+        if affine.cond > MAX_MATRIX_COND:
+            self.message.emit("warning", f"{what}: its matrix condition is {affine.cond:.3g}, more than "
+                                         f"{MAX_MATRIX_COND:g}: it maps the image onto almost a line, so px moves "
+                                         "may land far from the spot.")
 
     def _apply(self, cal: Optional[CalibrationFile], *, save_to: Optional[str] = None) -> Result:
         """Use `cal` (None: no calibration): the stage's px -> mm, and the user home and backlash it

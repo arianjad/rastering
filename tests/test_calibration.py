@@ -130,6 +130,23 @@ def test_a_calibration_change_under_an_armed_raster_is_done_and_says_where_the_p
         g.close()
 
 
+def test_a_fresh_fit_above_the_condition_limit_is_used_with_a_warning(tmp_path):
+    """Harm stopped: three good clicks whose fit had matrix condition 20 (a steep camera angle, or
+    a stage axis far less stretched than the other) were refused, though the fit has a target and
+    the same matrix from a file loads; the operator could not calibrate at all. The fit is used
+    and saved, with one plain line naming the condition, as for a file."""
+    g = Rig(tmp_path, calibrated=False)
+    try:
+        _click_three_spots(g, [((1.0, 0.05), (100.0, 100.0)), ((3.0, 0.05), (300.0, 100.0)),
+                               ((1.0, 0.15), (100.0, 300.0))])            # M = [[0.01, 0], [0, 0.0005]]
+        wait_until(lambda: g.cals and g.cals[-1] is not None)
+        assert g.cals[-1].affine.px_to_mm(200.0, 200.0) == pytest.approx((2.0, 0.1))
+        assert g.refusals() == []
+        assert len(g.warnings()) == 1 and "its matrix condition is 20, more than 10" in g.warnings()[0]
+    finally:
+        g.close()
+
+
 def test_a_calibration_file_below_the_quality_limit_loads_with_a_warning(tmp_path):
     """Harm stopped: a calibration file whose matrix is far from square (condition above 10: maybe
     a camera at a steep angle, maybe a bad fit) was refused outright, so the operator could not
