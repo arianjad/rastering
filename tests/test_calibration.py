@@ -9,7 +9,8 @@ import time
 import numpy as np
 import pytest
 
-from calibration import CalibrationFile, AffineCalibration, read_calibration_file, write_calibration_file
+from calibration import (CalibrationFile, AffineCalibration, fit_affine, read_calibration_file,
+                         write_calibration_file)
 from rig import Rig, wait_until, write_calibration
 
 
@@ -268,3 +269,44 @@ def test_load_without_a_path_loads_the_calibration_used_last(tmp_path):
         assert g.ctl.calibration.px_to_mm(100.0, 100.0) == pytest.approx((2.0, 2.0))
     finally:
         g.close()
+
+
+@pytest.mark.parametrize("matrix", [[[float("nan"), 0.0], [0.0, 0.01]], [[0.01, 0.01], [0.01, 0.01]]])
+def test_an_unusable_calibration_file_is_refused_with_words_about_the_file(tmp_path, matrix):
+    """Harm stopped: loading a calibration file with a NaN or a singular matrix said "the stage
+    positions at the clicks lie on one line ... move the stage between clicks", so the operator
+    went to recalibrate a file they had only opened. The refusal names the file and its matrix."""
+    path = str(tmp_path / "broken.json")
+    with open(path, "w") as f:
+        json.dump({"calibration_matrix": matrix, "calibration_offset": [0.0, 0.0]}, f)
+    with pytest.raises(ValueError) as e:
+        read_calibration_file(path)
+    assert "broken.json" in str(e.value) and "calibration matrix" in str(e.value)
+    assert "click" not in str(e.value)
+
+
+def test_use_last_names_the_remembered_file_when_it_is_gone(tmp_path):
+    """Harm stopped: Use last, with the calibration file used last deleted or moved, said "no
+    calibration used before", so the operator recalibrated instead of finding the file. The
+    refusal names the missing file."""
+    g = Rig(tmp_path, calibrated=False)
+    try:
+        path = write_calibration(tmp_path / "cal_lab.json")
+        assert g.ctl.load_calibration(path).ok
+        g.ctl.clear_calibration()
+        import os
+        os.remove(path)
+        res = g.ctl.load_calibration()
+        assert not res.ok and "cal_lab.json" in res.words and "no calibration used before" not in res.words
+    finally:
+        g.close()
+
+
+def test_the_fit_line_has_no_number_that_reads_like_a_failed_limit():
+    """Harm stopped: the fit's log line showed "cond(A) 5.81e+04", a number of another matrix,
+    next to the matrix limit of 10, so a good calibration read as a failed one. The line gives
+    the spots and the scale only."""
+    px = [(0.0, 0.0), (100.0, 0.0), (0.0, 100.0)]
+    mm = [(1.0, 1.0), (2.1, 1.0), (1.0, 2.1)]
+    _cal, words = fit_affine(px, mm)
+    assert words == "3 spots, scale 0.011 mm/px"

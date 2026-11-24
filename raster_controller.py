@@ -24,7 +24,7 @@ from bbx_zmq.menus.rastering import ARMED, LOCAL, MENU, OFF, RUNNING
 from PyQt5.QtCore import QObject, pyqtSignal
 
 from calibration import (LAST_CALIBRATION_POINTER, AffineCalibration, CalibrationFile, fit_affine,
-                         last_calibration_path, read_calibration_file, remember_calibration_path,
+                         read_calibration_file, remember_calibration_path, remembered_calibration_path,
                          write_calibration_file)
 from config import APP_CONFIG, SETTINGS_DEFAULTS_FILE, SIM_FOLDER, AppConfig, HardwareConfig
 from raster_paths import points_from_spec
@@ -430,9 +430,13 @@ class SystemController(QObject):
     def load_calibration(self, path: Optional[str] = None) -> Result:
         """Load a calibration file (None: the one used last) and use it: affine, user home,
         backlash."""
-        path = path or last_calibration_path(self._pointer_path)
         if not path:
-            return self._refused(Refused("no_calibration_file", "no calibration used before: load a calibration file"))
+            path = remembered_calibration_path(self._pointer_path)
+            if not path:
+                return self._refused(Refused("no_calibration_file", "no calibration used before: load a calibration file"))
+            if not os.path.exists(path):
+                return self._refused(Refused("no_calibration_file", f"the calibration used last, {path}, is no longer "
+                                                                    "there: load a calibration file"))
         try:
             cal = read_calibration_file(path)
         except (OSError, ValueError) as e:

@@ -36,17 +36,30 @@ MIN_STAGE_SPAN_MM = 0.010
 MAX_MATRIX_COND = 10.0
 
 
+class UnusableMatrix(ValueError):
+    """A px -> mm matrix that cannot be used. The message speaks of the clicks (a fit);
+    file_words say the same of a matrix read from a file."""
+
+    def __init__(self, words: str, file_words: str):
+        super().__init__(words)
+        self.file_words = file_words
+
+
 class AffineCalibration:
     """motor [mm] = M @ image [px] + b. Read-only once made."""
 
     def __init__(self, M, b):
         self.M = np.array(M, dtype=float).reshape(2, 2)
         self.b = np.array(b, dtype=float).reshape(2)
-        cond = float(np.linalg.cond(self.M)) if np.all(np.isfinite(self.M)) else float("inf")
+        finite = bool(np.all(np.isfinite(self.M)))
+        cond = float(np.linalg.cond(self.M)) if finite else float("inf")
         if not cond <= MAX_MATRIX_COND:
-            raise ValueError(f"the stage positions at the clicks lie (almost) on one line (matrix condition "
-                             f"{cond:.3g}, more than {MAX_MATRIX_COND:g}): move the stage in both x and y "
-                             "between clicks, so the spots form a triangle")
+            raise UnusableMatrix(
+                f"the stage positions at the clicks lie (almost) on one line (matrix condition {cond:.3g}, more "
+                f"than {MAX_MATRIX_COND:g}): move the stage in both x and y between clicks, so the spots form "
+                "a triangle",
+                f"its condition number is {cond:.3g}, more than {MAX_MATRIX_COND:g}: it maps the image onto "
+                "(almost) a line" if finite else "it holds a value that is not a number")
         self._Minv = np.linalg.inv(self.M)
         for a in (self.M, self.b, self._Minv):
             a.setflags(write=False)
@@ -89,12 +102,12 @@ def fit_affine(px_points: Sequence[XY], mm_points: Sequence[XY]) -> Tuple[Affine
         A[2 * i, 0:3] = (x, y, 1.0)
         A[2 * i + 1, 3:6] = (x, y, 1.0)
         rhs[2 * i], rhs[2 * i + 1] = mx, my
-    params, _, rank, sv = np.linalg.lstsq(A, rhs, rcond=None)
+    params, _, rank, _sv = np.linalg.lstsq(A, rhs, rcond=None)
     if rank < 6:
         raise ValueError("the clicked spots lie on one line: click spots that form a triangle")
     cal = AffineCalibration([[params[0], params[1]], [params[3], params[4]]], [params[2], params[5]])
     scale = float(np.sqrt(abs(np.linalg.det(cal.M))))
-    return cal, f"{n} spots, scale {scale:.4g} mm/px, cond(A) {sv.max() / sv.min():.3g}"
+    return cal, f"{n} spots, scale {scale:.4g} mm/px"
 
 
 @dataclass(frozen=True)
@@ -124,8 +137,12 @@ def read_calibration_file(path: str) -> CalibrationFile:
     uh = data.get("user_home")
     bl = data.get("backlash") if isinstance(data.get("backlash"), dict) else {}
     cs = data.get("camera_settings")
+    try:
+        affine = AffineCalibration(data["calibration_matrix"], data["calibration_offset"])
+    except UnusableMatrix as e:
+        raise ValueError(f"the calibration matrix in {path} cannot be used: {e.file_words}") from None
     return CalibrationFile(
-        affine=AffineCalibration(data["calibration_matrix"], data["calibration_offset"]),
+        affine=affine,
         user_home_mm=(float(uh["x"]), float(uh["y"])) if isinstance(uh, dict) and "x" in uh and "y" in uh else None,
         backlash_mm=tuple(float(bl[k]) if bl.get(k) is not None else None for k in ("x", "y")),
         camera_settings=cs if isinstance(cs, dict) else None,
@@ -150,7 +167,7 @@ def write_calibration_file(path: str, cal: CalibrationFile) -> CalibrationFile:
         "saved_at": saved_at,
         "notes": cal.notes,
     }
-    _write_json_whole(path, data)
+    write_json_whole(path, data)
     return CalibrationFile(cal.affine, uh, (bx, by), camera, cal.notes, saved_at, os.path.abspath(path))
 
 
@@ -167,7 +184,7 @@ def _plain(value: Any) -> Any:
     return value
 
 
-def _write_json_whole(path: str, data: Any) -> None:
+def write_json_whole(path: str, data: Any) -> None:
     """Write `data` as JSON to `path` whole or not at all: the text is made first, written to a
     temporary file in the same folder, then renamed over `path`."""
     text = json.dumps(data, indent=2)
@@ -201,16 +218,16 @@ def camera_changed(now: Optional[Dict[str, Any]], saved: Optional[Dict[str, Any]
     return False
 
 
-def last_calibration_path(pointer: str = LAST_CALIBRATION_POINTER) -> Optional[str]:
-    """The calibration file used last, if the pointer names one that still exists."""
+def remembered_calibration_path(pointer: str = LAST_CALIBRATION_POINTER) -> Optional[str]:
+    """The calibration file the pointer names (it may since have been deleted or moved)."""
     try:
         with open(pointer, "r") as f:
             p = json.load(f).get("last_calibration_path")
     except (OSError, ValueError, AttributeError):
         return None
-    return p if isinstance(p, str) and os.path.exists(p) else None
+    return p if isinstance(p, str) else None
 
 
 def remember_calibration_path(path: str, pointer: str = LAST_CALIBRATION_POINTER) -> None:
     """Point last_calibration_state.json at `path`. Raises OSError."""
-    _write_json_whole(pointer, {"last_calibration_path": os.path.abspath(path)})
+    write_json_whole(pointer, {"last_calibration_path": os.path.abspath(path)})

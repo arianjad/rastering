@@ -64,7 +64,7 @@ def camera_setup(cfg: config.AppConfig) -> Tuple[object, object, str, str]:
 def build(cfg: config.AppConfig, *, here: str = HERE, remember_theme=None):
     """The controller, the camera thread (not started) and the window, with the last calibration
     loaded. here: the folder of the GUI's own files (tests pass a temporary folder)."""
-    from calibration import last_calibration_path
+    from calibration import remembered_calibration_path
     from camera_thorlabs import ThorCameraThread
     from raster_controller import create_controller, data_files
     from window import RasterWindow
@@ -86,8 +86,8 @@ def build(cfg: config.AppConfig, *, here: str = HERE, remember_theme=None):
     if cfg.hardware.simulate:
         win.log.add(f"Simulated: calibration and defaults are kept in {os.path.dirname(files.pointer)}, "
                     "apart from the lab GUI's.")
-    if last_calibration_path(controller.pointer_path):
-        controller.load_calibration()
+    if remembered_calibration_path(controller.pointer_path):
+        controller.load_calibration()        # a remembered file that is gone: the log names it
     else:
         win.log.add("No calibration used before: calibrate in Setup.")
     return controller, camera, win
