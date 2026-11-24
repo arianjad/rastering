@@ -50,7 +50,7 @@ LIGHT = {
     "spot": "#C0186E",
     "path": "#0B6E9E",
     "auto": "#F5C400",
-    "auto_edge": "#8A6D00",   # keeps the yellow block's edge on a light ground
+    "auto_edge": "#8A6D00",   # yellow block's edge and the held outline, visible on a light ground
     "on_auto": "#0D0E10",
     "fault": "#C42B21",
 }
@@ -257,7 +257,7 @@ QSplitter::handle {{ background: {t['rule']}; }}
 #stateBlock {{ border-radius: 3px; padding: 0px 14px; }}
 #stateBlock[look="off"] {{ background: transparent; color: {t['label']}; border: 1px solid {t['rule']}; }}
 #stateBlock[look="auto"] {{ background: {t['auto']}; color: {t['on_auto']}; border: 1px solid {t['auto_edge']}; }}
-#stateBlock[look="held"] {{ background: transparent; color: {t['ink']}; border: 3px double {t['auto']}; }}
+#stateBlock[look="held"] {{ background: transparent; color: {t['ink']}; border: 3px double {t['auto_edge']}; }}
 #editedNotice {{ color: {t['path']}; border: 1px solid {t['path']}; border-radius: 3px; padding: 2px 10px; }}
 
 /* Log line */
