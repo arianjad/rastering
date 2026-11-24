@@ -62,7 +62,7 @@ def test_saved_subframe_roi_reopens_where_it_was_saved(tmp_path):
     ct.save_thorcam_settings_to_ini(ini, {"aoi_width": 640, "aoi_height": 480,
                                           "aoi_x": 100, "aoi_y": 50})
     cfg = ct.load_thorcam_config_from_ini(ini)
-    with mock.patch.object(ct, "TLCameraSDK", _FakeSDK):
+    with mock.patch("thorlabs_tsi_sdk.tl_camera.TLCameraSDK", _FakeSDK):
         cam = ct.ThorCamera(cfg)
         cam.open()
     assert _roi_start(cam) == (100, 50)

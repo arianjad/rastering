@@ -70,8 +70,10 @@ class RasterMainWindow(QtWidgets.QMainWindow):
     # raster-spec widgets live. Payload: (want_continuous, reply callable).
     _remote_arm_requested = QtCore.pyqtSignal(bool, object)
 
-    def __init__(self, controller, *, ui_path: Optional[str] = None, parent=None):
+    def __init__(self, controller, *, ui_path: Optional[str] = None, parent=None,
+                 simulate_camera: bool = False):
         super().__init__(parent)
+        self._simulate_camera = simulate_camera  # fake camera (camera_sim.py), no SDK
 
         if ui_path is None:
             # default: same directory as this file
@@ -685,7 +687,11 @@ class RasterMainWindow(QtWidgets.QMainWindow):
         else:
             cfg = ThorCamConfig()  # fallback defaults
 
-        self.camera_thread = ThorCameraThread(cfg, parent=self)
+        camera_class = None
+        if self._simulate_camera:
+            from camera_sim import SimCamera
+            camera_class = SimCamera
+        self.camera_thread = ThorCameraThread(cfg, parent=self, camera_class=camera_class)
 
         # Frame coalescing: the camera thread can outpace a busy GUI thread;
         # the old direct queued connection then accumulated 1.3 MB frame

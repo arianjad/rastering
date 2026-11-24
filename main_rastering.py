@@ -1,81 +1,66 @@
-# main.py
+"""Start the rastering GUI.
+
+    py -3.13 main_rastering.py                       real camera, real motors, BLACS link on
+    py -3.13 main_rastering.py --simulate --no-blacs  no hardware, no network port
+
+--simulate: fake motors and a fake camera (camera_sim.py); the camera SDK and
+Kinesis are never loaded. Same as RASTER_SIMULATE=1.
+--no-blacs: do not serve the BLACS menu link (its port stays free, so this copy
+can run next to the lab's real GUI).
+"""
 from __future__ import annotations
 
+import argparse
+import dataclasses
+import os
 import sys
-from PyQt5 import QtWidgets
-from PyQt5 import QtGui
+
+from PyQt5 import QtGui, QtWidgets
 
 import config
 
-UI_FILE = 'raster_gui.ui'
+HERE = os.path.dirname(os.path.abspath(__file__))
 
-ICON_PATH = 'rastering.ico'
 
-def build_controller():
-    """
-    Build the raster controller using config + hardware.
+def parse_args(argv=None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description="Rastering GUI")
+    p.add_argument("--simulate", action="store_true",
+                   help="fake motors and fake camera (no hardware)")
+    p.add_argument("--no-blacs", action="store_true",
+                   help="do not serve the BLACS menu link")
+    return p.parse_args(argv)
 
-    Tries create_controller_from_config() first (if you added it),
-    otherwise constructs motors directly and builds SystemController.
-    """
-    import raster_controller
 
-    # Preferred: factory helper if present
-    if hasattr(raster_controller, "create_controller_from_config"):
-        return raster_controller.create_controller_from_config(config.APP_CONFIG)
-
-    # Fallback: manual construction
-    from hardware import KCube, KinesisOptions
-    from raster_controller import SystemController
-
-    opts = KinesisOptions(
-        kinesis_dir=config.APP_CONFIG.hardware.kinesis_dir,
-        poll_ms=config.APP_CONFIG.hardware.poll_ms,
-        settings_wait_ms=config.APP_CONFIG.hardware.settings_wait_ms,
-        device_settings_name=config.APP_CONFIG.hardware.device_settings_name,
-        verbose=config.APP_CONFIG.hardware.verbose,
+def app_config(args: argparse.Namespace) -> config.AppConfig:
+    cfg = config.APP_CONFIG
+    simulate = (args.simulate or cfg.hardware.simulate
+                or os.environ.get("RASTER_SIMULATE", "").lower() in ("1", "true", "yes"))
+    return dataclasses.replace(
+        cfg,
+        hardware=dataclasses.replace(cfg.hardware, simulate=simulate),
+        network=dataclasses.replace(cfg.network,
+                                    blacs_link=cfg.network.blacs_link and not args.no_blacs),
     )
 
-    motor_x = KCube(config.APP_CONFIG.hardware.serial_x, "X", options=opts)
-    motor_y = KCube(config.APP_CONFIG.hardware.serial_y, "Y", options=opts)
 
-    ctl = SystemController(
-        motor_x,
-        motor_y,
-        calibration_path=config.APP_CONFIG.paths.calibration_path,
-        target_bounds=config.APP_CONFIG.raster.target_bounds,
-        motor_bounds=config.APP_CONFIG.hardware.motor_bounds,
-        motor_bounds_units=getattr(
-            config.APP_CONFIG.hardware, "motor_bounds_units", "motor"),
-        telemetry_period_s=config.APP_CONFIG.telemetry.period_s,
-    )
+def main(argv=None) -> int:
+    args = parse_args(argv)
+    cfg = app_config(args)
 
-    # BLACS link: the menu server (BBX-190)
-    if config.APP_CONFIG.network.blacs_link:
-        ctl.start_menu_server()
-
-    return ctl
-
-
-def main() -> int:
-    app = QtWidgets.QApplication(sys.argv)
+    app = QtWidgets.QApplication(sys.argv[:1])
     from theme import apply_theme, load_light_pref
     apply_theme(app, light=load_light_pref())
-    app.setWindowIcon(QtGui.QIcon(ICON_PATH))
+    app.setWindowIcon(QtGui.QIcon(os.path.join(HERE, "rastering.ico")))
 
-    # Build controller + UI
-    controller = build_controller()
+    from raster_controller import create_controller_from_config, load_last_calibration_path
+    controller = create_controller_from_config(cfg)
 
     from ui import RasterMainWindow
-    win = RasterMainWindow(controller, ui_path=UI_FILE)
+    win = RasterMainWindow(controller, ui_path=os.path.join(HERE, "raster_gui.ui"),
+                           simulate_camera=cfg.hardware.simulate)
 
-    # Auto-load the last-used calibration file. On first launch (no
-    # last_calibration_state.json yet) this is a no-op -- the user must
-    # browse-load explicitly. The bundled camera_settings (if any) are
-    # handed to the UI so it can enable the "Apply camera settings from
-    # cal" button without auto-applying them.
+    # Load the last-used calibration, if any (first launch: none; calibrate first).
     try:
-        from raster_controller import load_last_calibration_path
         last_path = load_last_calibration_path()
         if last_path:
             data = controller.load_calibration_from_path(last_path)
@@ -84,15 +69,8 @@ def main() -> int:
         print(f"[startup] Could not auto-load last calibration: {e}")
 
     win.show()
-
     rc = app.exec_()
-
-    # Clean shutdown
-    try:
-        controller.shutdown()
-    except Exception:
-        pass
-
+    controller.shutdown()
     return rc
 
 

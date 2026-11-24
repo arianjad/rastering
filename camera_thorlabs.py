@@ -7,8 +7,6 @@ from typing import Any, Dict, Optional
 import numpy as np
 from PyQt5 import QtCore
 
-from thorlabs_tsi_sdk.tl_camera import TLCameraSDK, TLCamera
-from thorlabs_tsi_sdk.tl_camera_enums import OPERATION_MODE
 
 
 @dataclass
@@ -34,8 +32,8 @@ class ThorCamera:
     """
     def __init__(self, cfg: ThorCamConfig):
         self.cfg = cfg
-        self._sdk: Optional[TLCameraSDK] = None
-        self._cam: Optional[TLCamera] = None
+        self._sdk = None
+        self._cam = None
         self._opened = False
 
         # Live dimensions (updated on ROI change)
@@ -58,6 +56,9 @@ class ThorCamera:
         return self._live_height
 
     def open(self) -> None:
+        # Imported here so --simulate never loads the camera SDK.
+        from thorlabs_tsi_sdk.tl_camera import TLCameraSDK
+        from thorlabs_tsi_sdk.tl_camera_enums import OPERATION_MODE
         self._sdk = TLCameraSDK()
         cameras = self._sdk.discover_available_cameras()
         if not cameras:
@@ -278,10 +279,11 @@ class ThorCameraThread(QtCore.QThread):
     error = QtCore.pyqtSignal(str)
     camera_info_signal = QtCore.pyqtSignal(dict)
 
-    def __init__(self, cfg: Optional[ThorCamConfig] = None, parent=None):
+    def __init__(self, cfg: Optional[ThorCamConfig] = None, parent=None, camera_class=None):
         super().__init__(parent)
         self.cfg = cfg or ThorCamConfig()
-        self._cam: Optional[ThorCamera] = None
+        self._camera_class = camera_class or ThorCamera  # camera_sim.SimCamera for --simulate
+        self._cam = None
         self._running = False
 
         self._params_lock = QtCore.QMutex()
@@ -352,10 +354,10 @@ class ThorCameraThread(QtCore.QThread):
 
     def run(self) -> None:
         self._running = True
-        self._cam = ThorCamera(self.cfg)
+        self._cam = self._camera_class(self.cfg)
         try:
             self._cam.open()
-            self.status.emit("ThorLabs camera opened.")
+            self.status.emit(f"Camera opened ({type(self._cam).__name__}).")
         except Exception as e:
             self.error.emit(f"Camera open failed: {e}")
             return
@@ -441,7 +443,7 @@ class ThorCameraThread(QtCore.QThread):
                 self._cam.close()
             except Exception:
                 pass
-            self.status.emit("ThorLabs camera closed.")
+            self.status.emit("Camera closed.")
     # =====================================================================
 # .ini loader / saver  (ThorLabs edition)
 # =====================================================================

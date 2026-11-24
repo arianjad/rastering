@@ -2364,12 +2364,10 @@ def create_controller_from_config(config_obj=None) -> "SystemController":
     if serial_x is None or serial_y is None:
         raise RuntimeError("Missing motor serials (expected hardware.serial_x/serial_y or SERIAL_X/SERIAL_Y)")
 
-    # Simulate: config flag OR env override (RASTER_SIMULATE=1 for a no-rig
-    # test launch without editing config). Explicit only -- we never auto-
+    # Simulate (main_rastering.py --simulate): explicit only -- we never auto-
     # fall back to sim on a KCube init failure, or a genuinely disconnected
     # motor on the real rig would silently no-op every move.
-    simulate = bool(_get("hardware.simulate", False)) or os.environ.get(
-        "RASTER_SIMULATE", "").lower() in ("1", "true", "yes")
+    simulate = bool(_get("hardware.simulate", False))
 
     if simulate:
         motor_x = SimulatedMotor(serial_x, "X")
