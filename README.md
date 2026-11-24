@@ -31,8 +31,6 @@ the BLACS ports (55535, 55536) free, so a simulated copy can run next to the lab
   0-12 mm travel, is done and logged in red; a jog past the travel edge stops at the edge.
 - File > Save settings as defaults keeps the pattern, run options and jog step for the next start.
 
-`docs/window-features.md` lists every control of the previous window and where it went.
-
 ## BLACS link
 
 RaX's protocol (`blacs_link.py`; envelope from RaX's `zmq_v2.py`, beambox-daq `bbx_zmq.zmq_v2`):

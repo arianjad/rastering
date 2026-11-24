@@ -44,4 +44,3 @@ Steers the ablation laser spot over a target: two Thorlabs Z912 stages (KCube co
 - `config.py`: serials, travel, ports, camera defaults, paths; saved defaults file
 - `hardware.py` (KCube via Kinesis/pythonnet), `motors_sim.py`, `camera_thorlabs.py`, `camera_sim.py`
 - `window.py`, `views/`, `theme.py`
-- `docs/window-features.md`: every control of the previous window and where it is now
