@@ -145,6 +145,10 @@ class Rig:
     def refusals(self):
         return [t for k, t in self.messages if k == "refused"]
 
+    def warnings(self, kind="warning"):
+        """Log lines of `kind`: "warning" (plain) or "red_warning"."""
+        return [t for k, t in self.messages if k == kind]
+
     def idle(self):
         """Wait until every stage job queued so far has run."""
         done = threading.Event()

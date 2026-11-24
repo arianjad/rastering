@@ -1,20 +1,24 @@
 """The two Z912 stage axes behind one motor thread, one FIFO queue and one admission check.
 
 Every move (raster point, go to point, jog, move in mm, one-axis move, device home, user home,
-BLACS x, y) is queued here and checked once, on the motor thread, just before it runs:
-  (a) a target in image pixels needs a calibration;
-  (b) while a raster is armed or running, only that raster's own moves get through;
-  (c) the target must lie inside the stage travel (a target within 10 um outside is moved onto
-      the edge).
-A refused move moves nothing; its words go back to the caller (BLACS or the window), which only
-shows them. Only the motor thread calls the motors. When the queue is idle the thread reads the
-position and reports it when it changed; during a move or a home the motor reports it on the way. The thread outlives any one job (an error is logged and
-the next job runs); close() drops the queued jobs, lets the one in flight end, then disconnects.
-
-Refusal codes (BLACS sees them in the reply's error): raster_armed / raster_held / raster_running
-(a raster holds the stage), not_calibrated, and motor_move_failed (RaX's name) for everything else
-(outside the travel, a motor error, a raster point dropped by Stop or a new arm, the GUI closing);
-the words say which.
+BLACS x, y) is queued here and checked once, on the motor thread, just before it runs. Refused
+(nothing moves, the words go back to the caller):
+  - a target in image pixels with no calibration (no target exists): not_calibrated;
+  - a raster point of a raster stopped or armed again since it was queued (no log line: the
+    window shows the raster's state already).
+Done, with a warning on the log and in Result.warning (BLACS gets it in its reply):
+  - a target outside the travel: sent to the KCube as asked, red (its limits are the only stop);
+    a target within 10 um outside goes onto the edge, silently;
+  - a jog past the edge: stops at the edge, plain;
+  - a move that is not the raster's own while BLACS has the raster armed: red (BLACS's shots land
+    off the recorded point until its next point); during a continuous run: plain; held at the
+    GUI: nothing said;
+  - a device home during any raster: red (a sweep to 0 mm under the laser).
+Only the motor thread calls the motors. When the queue is idle the thread reads the position and
+reports it when it changed; during a move or a home the motor reports it on the way. The thread
+outlives any one job (an error is logged and the next job runs); close() drops the queued jobs,
+lets the one in flight end, then disconnects. Failure codes: not_calibrated, motor_move_failed
+(RaX's name: a motor error, a dropped raster point, the GUI closing); the words say which.
 """
 from __future__ import annotations
 
@@ -26,7 +30,7 @@ from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Protocol, Sequence, Tuple
 
 import numpy as np
-from raster_session import ARMED, LOCAL, OFF, RUNNING
+from raster_session import ARMED, OFF, RUNNING
 
 from calibration import AffineCalibration
 
@@ -36,12 +40,14 @@ Bounds = Tuple[float, float, float, float]   # xmin, xmax, ymin, ymax [mm]
 MOTOR_EDGE_CLAMP_MM = 0.010   # a target this close outside the travel goes onto the edge [mm]
 POLL_S = 0.2                  # idle this long, the motor thread reads the position [s]
 
-# A move refused because a raster holds the stage: (code, who holds it) per raster state.
-RASTER_HOLDERS = {
-    ARMED: ("raster_armed", "the raster is armed for BLACS"),
-    LOCAL: ("raster_held", "the raster is held at the GUI"),
-    RUNNING: ("raster_running", "a continuous raster runs from the GUI"),
+# A move that is not the raster's own, while a raster is active: (red?, words); held at the GUI
+# (LOCAL) nothing is said.
+DURING_RASTER = {
+    ARMED: (True, "done while BLACS has the raster armed: its shots land here, not on the recorded "
+                  "raster point, until its next point"),
+    RUNNING: (False, "done during a continuous run: its next point moves the stage back onto the path"),
 }
+HOME_DURING_RASTER = "done during a raster: the stage sweeps to 0 mm under the laser"
 
 
 class Motor(Protocol):
@@ -57,13 +63,15 @@ class Motor(Protocol):
 
 @dataclass(frozen=True)
 class Result:
-    """How a stage job ended. A refusal has ok False, a code and the operator's words."""
+    """How a stage job ended. A refusal has ok False, a code and the operator's words; a job done
+    with a warning has ok True and the warning's words (also on the log)."""
     ok: bool
     words: str = ""
     code: str = ""
     mm: Optional[XY] = None        # where the stage is afterwards [mm]
     px: Optional[XY] = None        # a move in px: the point it was sent to [px]
     value: Optional[float] = None  # backlash [mm]
+    warning: str = ""
 
 
 @dataclass(frozen=True)
@@ -112,12 +120,27 @@ def within_travel(mm: np.ndarray, bounds: Bounds, tol: float = MOTOR_EDGE_CLAMP_
     return (x >= xmin - tol) & (x <= xmax + tol) & (y >= ymin - tol) & (y <= ymax + tol)
 
 
-def out_of_bounds_message(bounds: Bounds, motor_xy: XY, target_xy: Optional[XY] = None) -> str:
-    """The refusal of a target outside the travel: which point, where it maps, the travel."""
+def outside_travel_words(bounds: Bounds, motor_xy: XY, target_xy: Optional[XY] = None) -> str:
+    """The warning for a target outside the travel: the travel, which point, where it maps."""
     where = f"motor ({motor_xy[0]:.4f}, {motor_xy[1]:.4f}) mm"
     if target_xy is not None:
-        where = f"target ({target_xy[0]:.1f}, {target_xy[1]:.1f}) -> " + where
-    return f"Rejected: motor out of bounds -- {where}, travel is {bounds}"
+        where = f"target ({target_xy[0]:.1f}, {target_xy[1]:.1f}) px -> " + where
+    return f"outside the travel {bounds} mm, {where}: sent to the KCube; its own limits are the only stop"
+
+
+def jog_target(here: XY, delta: XY, bounds: Bounds) -> Tuple[XY, bool]:
+    """Where a jog of `delta` [mm] from `here` ends: an axis that would pass the travel edge stops
+    at it (one already past it stays). Returns (target, stopped at an edge)."""
+    xmin, xmax, ymin, ymax = bounds
+    out, stopped = [], False
+    for v, d, lo, hi in ((here[0], delta[0], xmin, xmax), (here[1], delta[1], ymin, ymax)):
+        t = v + d
+        if d > 0 and t > hi + MOTOR_EDGE_CLAMP_MM:
+            t, stopped = max(hi, v), True
+        elif d < 0 and t < lo - MOTOR_EDGE_CLAMP_MM:
+            t, stopped = min(lo, v), True
+        out.append(t)
+    return (out[0], out[1]), stopped
 
 
 def _quiet(*_args) -> None:
@@ -301,10 +324,15 @@ class Stage:
             return Result(False, words=f"{cmd.label} failed: {e}", code="motor_move_failed")
 
     def _move(self, cmd: Command) -> Result:
-        target = self._admit(cmd)
-        if isinstance(target, Result):
-            self._log("refused", f"{cmd.label}: {target.words}")
-            return target
+        admitted = self._admit(cmd)
+        if isinstance(admitted, Result):
+            if cmd.raster_run is None:       # a dropped raster point: the window shows why already
+                self._log("refused", f"{cmd.label}: {admitted.words}")
+            return admitted
+        target, warning, red = admitted
+        if warning:
+            warning = f"{cmd.label}: {warning}"
+            self._log("red_warning" if red else "warning", warning)
         if not cmd.quiet:
             self._log("info", f"{cmd.label} ...")
         if cmd.kind == "home":
@@ -318,24 +346,23 @@ class Stage:
         self._set_position(mm, cmd.px)
         if not cmd.quiet:
             self._log("info", f"{cmd.label}: done, motor ({mm[0]:.4f}, {mm[1]:.4f}) mm")
-        return Result(True, mm=mm, px=cmd.px)
+        return Result(True, mm=mm, px=cmd.px, warning=warning)
 
     def _admit(self, cmd: Command):
-        """The one admission check: the target [mm] to move to (None for a home), or a refusal."""
+        """The one admission check: (target [mm] or None for a home, warning words, red), or a
+        refusal Result."""
         state, run = self._raster_state()
+        warnings, red = [], False
         if cmd.raster_run is not None:
             if state == OFF or run != cmd.raster_run:
                 return Result(False, "dropped: the raster was stopped or armed again", "motor_move_failed")
-        elif state != OFF:
-            code, holder = RASTER_HOLDERS[state]
-            if cmd.from_blacs:
-                words = (f"{holder}, so a move to x, y would leave its path: stop the raster with the "
-                         "GUI's Stop button first, or take Raster_X / Raster_Y out of the sequence")
-            else:
-                words = f"refused, {holder}: stop the raster first"
-            return Result(False, words, code)
+        elif cmd.kind == "home" and state != OFF:
+            warnings, red = [HOME_DURING_RASTER], True
+        elif state in DURING_RASTER:
+            red, words = DURING_RASTER[state]
+            warnings.append(words)
         if cmd.kind == "home":
-            return None
+            return None, "; ".join(warnings), red
         if cmd.px is not None:
             cal = self.calibration
             if cal is None:
@@ -343,16 +370,18 @@ class Stage:
                               "not_calibrated")
             mm = cal.px_to_mm(*cmd.px)
         elif cmd.delta_mm is not None:
-            here = self._read_mm()
-            mm = (here[0] + cmd.delta_mm[0], here[1] + cmd.delta_mm[1])
+            mm, stopped = jog_target(self._read_mm(), cmd.delta_mm, self.travel_mm)
+            if stopped:
+                warnings.append(f"stopped at the travel edge, motor ({mm[0]:.4f}, {mm[1]:.4f}) mm")
         elif cmd.axis is not None:
             here = self._read_mm()
             mm = (float(cmd.value), here[1]) if cmd.axis == "X" else (here[0], float(cmd.value))
         else:
             mm = (float(cmd.mm[0]), float(cmd.mm[1]))
         if not within_travel(np.array([mm]), self.travel_mm)[0]:
-            return Result(False, out_of_bounds_message(self.travel_mm, mm, cmd.px), "motor_move_failed")
-        return clamp_to_bounds(mm, self.travel_mm)
+            warnings.append(outside_travel_words(self.travel_mm, mm, cmd.px))
+            return mm, "; ".join(warnings), True
+        return clamp_to_bounds(mm, self.travel_mm), "; ".join(warnings), red
 
     def _read_mm(self) -> XY:
         return float(self._motors["X"].get_position()), float(self._motors["Y"].get_position())

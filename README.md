@@ -27,7 +27,8 @@ the BLACS ports (55535, 55536) free, so a simulated copy can run next to the lab
 - **Run**: Start (continuous) or Arm here (step with Step), Arm for BLACS, Hand to BLACS / Take
   back, Stop (also Esc), Re-arm with edited pattern, go to a point, position history.
 - **Move stage** (always visible): arrows move the spot on the image by the step [mm]; Go to x, y;
-  Go to user home. Greyed while a raster is active.
+  Go to user home. Live in every state: a move while BLACS has the raster armed, or outside the
+  0-12 mm travel, is done and logged in red; a jog past the travel edge stops at the edge.
 - File > Save settings as defaults keeps the pattern, run options and jog step for the next start.
 
 `docs/window-features.md` lists every control of the previous window and where it went.
@@ -37,7 +38,9 @@ the BLACS ports (55535, 55536) free, so a simulated copy can run next to the lab
 RaX's protocol (`blacs_link.py`; envelope from RaX's `zmq_v2.py`, beambox-daq `bbx_zmq.zmq_v2`):
 BLACS sends requests to port 55535 (REQ/REP) and listens to the live state on port 55536
 (PUB/SUB). Requests: move to x, y [px] (`laser_raster_xy`), arm (`arm_raster`: the pattern set up
-in the window), next point (`move_to_next`), shots per point, disarm, and read the position.
+in the window), next point (`move_to_next`), shots per point, disarm, and read the position. A request the GUI
+can do is done; what it cost (a move outside the travel, off BLACS's armed path) comes back in the
+reply's `warning`.
 Published: the position [px] about 4 times a second; heartbeat, raster mode, owner, calibration
 and progress about once a second. `stage.py` is the one check for every move.
 

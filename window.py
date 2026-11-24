@@ -70,11 +70,10 @@ def gates(state: str, *, calibrated: bool, calibrating: bool, busy: bool, patter
         "restore_camera": need(idle, quiet),
         "camera_geometry": need((off, "A raster is active: its path is in camera px, so the region and "
                                       "display are locked."), quiet),
-        "home": need(idle),
+        "home": need(),                 # during a raster: done, red warning (stage.py)
         "backlash": need(idle),        # changes how the motors move mid-path, and saves the calibration file
-        "moves": need((off, "A raster is active: stop it before moving the stage by hand.")),
-        "go_user_home": need((off, "A raster is active: stop it before moving the stage by hand."),
-                             (user_home, NO_USER_HOME)),
+        "moves": need(),                # during a raster: done, with the warning it earns (stage.py)
+        "go_user_home": need((user_home, NO_USER_HOME)),
         "user_home_here": need((not busy, "The stage is moving: wait until it stops.")),
         "start": runnable,
         "arm_blacs": runnable,
@@ -414,7 +413,8 @@ class RasterWindow(QtWidgets.QMainWindow):
 
     # ================================================================ controller -> window
     def _on_message(self, kind: str, text: str) -> None:
-        self.log.add(text[:1].upper() + text[1:], error=kind != "info")
+        """kind "info" and "warning" in the ink colour; "red_warning", "refused", "error" in red."""
+        self.log.add(text[:1].upper() + text[1:], error=kind not in ("info", "warning"))
 
     # Signals from the motor thread arrive queued, those from the GUI thread at once, so an older
     # one can arrive after a newer one: each handler reads the controller's state now.

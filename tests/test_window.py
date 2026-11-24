@@ -110,30 +110,31 @@ def type_into(box, text: str) -> None:
 
 
 def test_buttons_offer_only_what_the_raster_state_allows(make):
-    """Harm stopped: a button the state does not allow is live (Step, a hand jog or a backlash
-    change while BLACS steps the stage, Start on top of a run), so the stage leaves the armed path
-    between shots; or the one action the operator needs is greyed with no reason given. Each state
-    offers its own actions, and a greyed button says why."""
+    """Harm stopped: a raster button the state does not allow is live (Step while BLACS steps the
+    stage, Start on top of a run), so two drivers step one path; or a hand move the GUI can do is
+    greyed during a raster, so the operator cannot nudge the beam or home a stuck stage without
+    stopping the raster first. Each state offers its own raster actions, a greyed one says why,
+    and the hand moves stay live in every state (the stage check warns about what they cost)."""
     rig, win = make()
     rig.ctl.set_user_home("X", 2.0)                             # Go to user home needs one
     rig.ctl.set_user_home("Y", 2.0)
     pump()
     assert run_buttons(win) == {"start", "arm_blacs"}
-    assert len(hand_moves(win)) == 8
+    every_move = hand_moves(win)
+    assert len(every_move) == 8
 
     win.run.start_btn.click()                                   # step mode: held at the GUI
     pump_until(lambda: win.bar.status()["state"] == "local")
     assert run_buttons(win) == {"step", "stop", "hand"}
-    assert hand_moves(win) == set()
-    assert "stop it before moving the stage" in win.jog.reason.text()
+    assert hand_moves(win) == every_move - {"backlash set"}
+    assert not win.jog.reason.isVisibleTo(win)
 
     win.run.hand_btn.click()
     pump_until(lambda: win.bar.status()["state"] == "armed")
     assert run_buttons(win) == {"stop", "take_back"}
     assert win.run.step_btn.toolTip() == "BLACS steps this raster: Take back first."
     assert win.bar.state_block.text() == "ARMED FOR BLACS"
-    assert hand_moves(win) == set()
-    assert win.setup.backlash_set_btn.toolTip() == "A raster is active: stop it first."
+    assert hand_moves(win) == every_move - {"backlash set"}
 
     win.run.stop_btn.click()
     win.run.continuous.setChecked(True)
@@ -141,13 +142,25 @@ def test_buttons_offer_only_what_the_raster_state_allows(make):
     win.run.start_btn.click()                                   # a continuous run
     pump_until(lambda: win.bar.status()["state"] == "running")
     assert run_buttons(win) == {"stop", "hand"}
-    assert hand_moves(win) == set()
+    assert hand_moves(win) == every_move - {"backlash set"}
 
     win.run.stop_btn.click()
     win.setup.clear_btn.click()
     pump_until(lambda: win.bar.status()["calibration"] == "none")
     assert run_buttons(win) == set()
     assert win.run.start_btn.toolTip() == "Calibrate first (Setup)."
+
+
+def test_a_plain_warning_is_not_red_and_a_red_warning_is(make):
+    """Harm stopped: every warning shown in the fault colour (red lines that are not faults teach
+    the operator to ignore the real ones), or a warning that does need attention (a move outside
+    the travel, a hand move under BLACS's armed raster) shown like an info line. A plain warning
+    shows in the ink colour; a red warning, a refusal and an error in red."""
+    rig, win = make()
+    for kind, red in (("info", False), ("warning", False), ("red_warning", True), ("refused", True), ("error", True)):
+        rig.ctl.message.emit(kind, f"a {kind} line")
+        pump_until(lambda: win.log._lines[-1][1] == f"A {kind} line")
+        assert win.log._lines[-1][2] is red, kind
 
 
 def test_pause_and_continue_buttons_hold_and_resume_a_run(make):

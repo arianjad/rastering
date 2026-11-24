@@ -60,7 +60,7 @@ the reason.
 | Load Calibration… | Kept: "Load…" |
 | Apply camera settings from cal | Kept: "Use the calibration's camera settings", shown when the calibration is stale |
 | Matrix spin boxes M11..M22, bX, bY | Changed: read-only M [mm/px], b [mm] and scale |
-| Device Home X, Y, Both | Kept; greyed while a raster is active |
+| Device Home X, Y, Both | Kept; during a raster it is done, with a red line (the stage sweeps to 0 mm under the laser) |
 | User home readings, setpoints, Set X / Set Y | Kept: one Set for x and y; "Here" fills them from the stage; saved into the calibration file at once. Until one is set it reads "not set" and Go to user home is greyed (no (0, 0) default) |
 | User home Go X / Go Y | Dropped: "Go to user home" (both axes) under Move stage, or Go to x, y |
 | Backlash readings, setpoints, Set X / Set Y | Kept: one Set; saved into the calibration file once the motors answer (an axis that fails is not waited for; a calibration loaded meanwhile is not written); greyed while a raster is active |
@@ -73,7 +73,7 @@ the reason.
 | Old | Now |
 |---|---|
 | Step x, Step y (motor units) | Merged: one "Step" [mm] along the arrow's screen direction. A number typed in any box counts when a button reads it, Enter or not |
-| Jog Up / Left / Right / Down | Kept: arrows; through the calibration matrix when calibrated; the rig's fixed axes otherwise, with a note under the pad to check the direction on the image; greyed with the reason while a raster is active |
+| Jog Up / Left / Right / Down | Kept: arrows; through the calibration matrix when calibrated; the rig's fixed axes otherwise, with a note under the pad to check the direction on the image. Live during a raster: red line while BLACS has it armed, a plain one during a continuous run, nothing while held at the GUI. A jog past the travel edge stops at the edge (plain line); a typed target outside the travel is sent to the KCube with a red line |
 | Clear manual markers | Dropped: the go-to mark is the only manual mark; trail 0 hides the trail |
 | x, y (motor units) | Kept: "x", "y" [mm, ±1000]; a click on the image on the Setup step fills them |
 | Move to Position | Kept: "Go to x, y" |

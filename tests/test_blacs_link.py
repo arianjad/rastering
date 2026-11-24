@@ -18,9 +18,6 @@ import blacs_link
 import raster_controller as rc
 from rig import PATH, Rig, wait_until
 
-XY_WORDS = ("so a move to x, y would leave its path: stop the raster with the GUI's Stop button first, "
-            "or take Raster_X / Raster_Y out of the sequence")
-
 
 @pytest.fixture
 def gui(tmp_path):
@@ -40,18 +37,19 @@ def _err(reply):
     return reply["status"], reply["error"]["code"], reply["error"]["message"]
 
 
-def test_a_move_outside_the_travel_is_refused_with_the_guis_words(gui):
-    """Harm stopped: BLACS sends the stage past its 12 mm travel (the Z912 runs into its end stop,
-    the spot leaves the target), or the refusal reaches BLACS as a bare "failed" and nobody can
-    tell which point or why. A point whose motor position is outside the travel answers ERROR
-    motor_move_failed (RaX's code) with the GUI's words and nothing moves; a point inside moves
-    both axes, X then Y, and CHECK_VALUE reads it back."""
-    status, code, words = _err(gui.blacs.program("laser_raster_xy", [1300.0, 200.0]))   # 13 mm
-    assert (status, code) == ("ERROR", "motor_move_failed")
-    assert words == ("Rejected: motor out of bounds -- target (1300.0, 200.0) -> "
-                     "motor (13.0000, 2.0000) mm, travel is (0.0, 12.0, 0.0, 12.0)")
-    assert gui.moves() == []
-    _ok(gui.blacs.program("laser_raster_xy", [500.0, 600.0]))
+def test_a_move_outside_the_travel_is_done_and_the_reply_carries_the_warning(gui):
+    """Harm named: a sequence's x, y outside the 12 mm travel is the sequence's call (the KCube's
+    limits are the only stop), but nobody may miss it: the Z912 may hit its end stop and the spot
+    leaves the target. The move is done and answers SUCCESS with a warning field (point, motor
+    position, travel), red on the GUI's log; a point inside moves both axes, X then Y, with no
+    warning, and CHECK_VALUE reads it back."""
+    reply = _ok(gui.blacs.program("laser_raster_xy", [1300.0, 200.0]))                  # 13 mm
+    assert reply["warning"] == ("BLACS move to (1300.0, 200.0) px: outside the travel (0.0, 12.0, 0.0, 12.0) mm, "
+                                "target (1300.0, 200.0) px -> motor (13.0000, 2.0000) mm: sent to the KCube; "
+                                "its own limits are the only stop")
+    assert gui.calls[-2:] == [("X", "move", 13.0), ("Y", "move", 2.0)]
+    assert reply["warning"] in gui.warnings("red_warning")
+    assert "warning" not in _ok(gui.blacs.program("laser_raster_xy", [500.0, 600.0]))
     assert gui.calls[-2:] == [("X", "move", 5.0), ("Y", "move", 6.0)]
     assert gui.blacs.check("laser_raster_x_coord_monitor")["value"] == 500.0
     assert gui.blacs.check("laser_raster_y_coord")["value"] == 600.0
@@ -136,25 +134,24 @@ def _make_raster(gui, state):
         assert gui.ctl.arm().ok
 
 
-@pytest.mark.parametrize("state, code, holder", [
-    ("armed", "raster_armed", "the raster is armed for BLACS"),
-    ("local", "raster_held", "the raster is held at the GUI"),
-    ("running", "raster_running", "a continuous raster runs from the GUI"),
-])
-def test_a_move_while_any_raster_is_active_is_refused_and_says_what_to_do(gui, state, code, holder):
-    """Harm stopped: a shot's x, y (Raster_X / Raster_Y in the sequence) pulls the stage off a
-    raster: the one BLACS steps, the one the operator holds, or a continuous run. The shot ablates
-    a spot off the path and the shot file has no point for it. While any raster is active a move is
-    refused, it does not move the stage, and the words say to stop the raster at the GUI or take
-    the x, y out of the sequence; after the GUI's Stop the same move is done."""
+@pytest.mark.parametrize("state, kind", [("armed", "red_warning"), ("local", None), ("running", "warning")])
+def test_a_move_while_a_raster_is_active_is_done_and_says_what_it_costs(gui, state, kind):
+    """Harm named: a shot's x, y (Raster_X / Raster_Y in the sequence) while BLACS has the raster
+    armed puts the shot off the recorded raster point; that is the sequence's call, but the
+    operator must see it (red) and BLACS's record must say so (the reply's warning). During a
+    continuous run the run's next point moves the stage back (plain warning); held at the GUI
+    nothing steps the stage (no warning). The move is done in every state."""
     _make_raster(gui, state)
     assert gui.ctl.raster_snapshot().state == state
     if state == "running":
         gui.x.gate.set()
-    assert _err(gui.blacs.program("laser_raster_xy", [500.0, 600.0])) == ("ERROR", code, f"{holder}, {XY_WORDS}")
-    assert 5.0 not in gui.moves("X") and 6.0 not in gui.moves("Y")
-    gui.ctl.stop_raster()                                    # the GUI's Stop button
-    _ok(gui.blacs.program("laser_raster_xy", [500.0, 600.0]))
+    reply = _ok(gui.blacs.program("laser_raster_xy", [500.0, 600.0]))
+    assert 5.0 in gui.moves("X") and 6.0 in gui.moves("Y")
+    if kind is None:
+        assert "warning" not in reply
+    else:
+        assert reply["warning"].startswith("BLACS move to (500.0, 600.0) px: done ")
+        assert reply["warning"] in gui.warnings(kind)
 
 
 def test_a_continuous_run_at_the_gui_is_not_taken_over_by_blacs(gui):
@@ -242,20 +239,20 @@ def test_shots_per_step_is_held_by_the_gui_and_reported(gui):
     assert gui.ctl.raster_snapshot().shots_per_step == 3
 
 
-def test_blacs_xy_in_a_continuous_runs_delay_is_refused_at_once_and_never_runs(gui):
+def test_blacs_xy_in_a_continuous_runs_delay_is_done_at_once(gui):
     """Harm stopped: BLACS's x, y during a continuous run with a long delay between points waited
-    out the delay (10 s or more: BLACS heard "still queued and will run", and the move did run
-    once the operator pressed Stop: the spot jumped off the path). It is refused at once with
-    raster_running, and nothing moves after Stop."""
+    out the delay (10 s or more: BLACS heard "still queued and will run", and the move ran after
+    the operator pressed Stop: the spot jumped off the path). It is done at once, between the
+    run's points, with the warning in the reply; nothing more moves after Stop."""
     gui.plan(continuous=True, delay_s=5.0)
     assert gui.ctl.arm().ok
     wait_until(lambda: gui.moves("X") == [1.0])
     t0 = time.monotonic()
-    assert _err(gui.blacs.program("laser_raster_xy", [500.0, 600.0]))[1] == "raster_running"
+    assert "continuous run" in _ok(gui.blacs.program("laser_raster_xy", [500.0, 600.0]))["warning"]
     assert time.monotonic() - t0 < 1.0
     gui.ctl.stop_raster()
     gui.idle()
-    assert gui.moves() == [1.0, 2.0]
+    assert gui.moves() == [1.0, 2.0, 5.0, 6.0]
 
 
 def test_blacs_hears_why_for_a_motor_failure_and_for_a_dropped_point(gui):

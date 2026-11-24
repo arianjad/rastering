@@ -20,7 +20,9 @@ Requests (REP socket, config.py NetworkConfig.zmq_bind, port 55535). x, y are ca
     PROGRAM_VALUE disarm_raster 1           the GUI steps the raster BLACS had: {disarmed}
     CHECK_VALUE laser_raster_x_coord[_monitor]   where the stage is [px] (also _y_)
 A move waits up to args.timeout_sec (default 10 s); a move not done by then answers TIMEOUT
-command_timeout, and the move stays queued and still runs.
+command_timeout, and the move stays queued and still runs. A move done with a warning (outside the
+travel; while the raster is armed for BLACS or a continuous run goes) answers SUCCESS with the
+words in a `warning` key: the GUI does what the sequence asks and says what it cost.
 
 Live state (PUB socket, NetworkConfig.pub_bind, port 55536), one text frame "<topic> <value>":
     every 0.25 s   laser_raster_x_coord_monitor, laser_raster_y_coord_monitor [px] (calibrated)
@@ -115,9 +117,9 @@ class RaxLink(RemoteControlServerBase):
             future, unit = self.c.move_mm(x, y, from_blacs=True), "mm"
         else:
             raise Refused("invalid_frame", f"frame must be 'pixel' or 'motor'; got {frame!r}")
-        _wait(future, limit, f"the stage did not finish the move to ({x:g}, {y:g}) {unit} within {limit:g} s; "
-                             "the move is still queued and will run")
-        return {}
+        res = _wait(future, limit, f"the stage did not finish the move to ({x:g}, {y:g}) {unit} within "
+                                   f"{limit:g} s; the move is still queued and will run")
+        return {"warning": res.warning} if res.warning else {}
 
     def _move_axis(self, k: int, value, limit: float) -> Dict[str, Any]:
         v = _number(value)
@@ -134,12 +136,12 @@ class RaxLink(RemoteControlServerBase):
         except Refused:              # not armed for BLACS: answer where the stage is, move nothing
             return self._not_stepped()
         try:
-            _wait(future, limit, f"the stage did not reach the next point within {limit:g} s; the move is "
-                                 "still queued and will run, and that point gets no shot (the next shot's "
-                                 "next point steps past it)")
+            res = _wait(future, limit, f"the stage did not reach the next point within {limit:g} s; the move "
+                                       "is still queued and will run, and that point gets no shot (the next "
+                                       "shot's next point steps past it)")
         except Refused as r:
             raise Refused(r.code if r.code == "command_timeout" else "raster_step_failed", r.words) from None
-        return {**self._point_meta(i, n, pt), "wrapped": wrapped}
+        return {**self._point_meta(i, n, pt), "wrapped": wrapped, **({"warning": res.warning} if res.warning else {})}
 
     def _not_stepped(self) -> Dict[str, Any]:
         """move_to_next when BLACS does not step the raster. Nothing armed: fire in place, with

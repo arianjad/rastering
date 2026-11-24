@@ -70,7 +70,7 @@ class SystemController(QObject):
     thread; connect window slots with the default (queued) connection.
     """
 
-    message = pyqtSignal(str, str)                # kind ("info", "refused", "error"), text
+    message = pyqtSignal(str, str)                # kind ("info", "warning", "red_warning", "refused", "error"), text
     position_changed = pyqtSignal(object)         # StagePosition
     busy_changed = pyqtSignal(bool)               # the motor thread has stage jobs
     raster_changed = pyqtSignal(object)           # RasterSnapshot (can arrive out of order: see its seq)

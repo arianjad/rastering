@@ -14,7 +14,7 @@ import raster_controller as rc
 from config import HardwareConfig
 from rig import TRAVEL, Rig, wait_until
 from raster_paths import RasterSpec, points_from_spec
-from stage import out_of_bounds_message
+from stage import outside_travel_words
 
 
 @pytest.fixture
@@ -29,7 +29,6 @@ def _every_move(ctl):
     return {
         "move in mm": lambda: ctl.move_mm(13.0, 2.0),
         "move one axis": lambda: ctl.move_axis_mm("X", 12.5),
-        "jog": lambda: ctl.jog_mm(12.0, 0.0),                    # from 1.0 mm to 13.0 mm
         "move in px": lambda: ctl.move_px(1300.0, 200.0),
         "user home": lambda: (ctl.set_user_home("X", 13.0), ctl.set_user_home("Y", 2.0), ctl.go_user_home())[2],
         "user home X": lambda: (ctl.set_user_home("X", 13.0), ctl.go_user_home("X"))[1],
@@ -37,34 +36,53 @@ def _every_move(ctl):
 
 
 @pytest.mark.parametrize("kind", list(_every_move(None)))
-def test_every_move_kind_outside_the_travel_is_refused_and_moves_nothing(gui, kind):
-    """Harm stopped: one kind of move (a jog, a user home, a one-axis move...) skips the travel
-    check and drives a Z912 into its end stop. Every kind is refused with the travel words, says
-    so in the log, and no motor moves."""
+def test_every_move_kind_outside_the_travel_goes_to_the_kcube_with_a_red_warning(gui, kind):
+    """Harm named: a move outside the 0-12 mm travel is the operator's (or the sequence's) call, so
+    the GUI no longer refuses it; the KCube's own limits are the only stop. The harm left is not
+    knowing it happened: the Z912 may run into its end stop. Every kind of move is sent to the
+    motors, and a red line (and the job's result) says it was outside the travel."""
     res = _every_move(gui.ctl)[kind]().result(2)
-    assert (res.ok, res.code) == (False, "motor_move_failed")
-    assert res.words.startswith("Rejected: motor out of bounds -- ") and "travel is (0.0, 12.0, 0.0, 12.0)" in res.words
-    assert gui.moves() == []
-    assert any("Rejected: motor out of bounds" in t for t in gui.refusals())
+    assert res.ok and max(gui.moves("X")) > 12.0
+    assert "outside the travel (0.0, 12.0, 0.0, 12.0) mm" in res.warning
+    assert any("outside the travel" in t for t in gui.warnings("red_warning"))
+    assert gui.refusals() == []
 
 
-def test_the_travel_words_name_the_point_and_where_it_maps(gui):
-    """Harm stopped: the operator (or BLACS) cannot tell which point was refused or by how much.
-    A px move names the image point, the motor position and the travel; an mm move the motor
-    position and the travel."""
-    assert gui.ctl.move_px(1300.0, 200.0).result(2).words == out_of_bounds_message(TRAVEL, (13.0, 2.0), (1300.0, 200.0))
-    assert gui.ctl.move_mm(13.0, 2.0).result(2).words == (
-        "Rejected: motor out of bounds -- motor (13.0000, 2.0000) mm, travel is (0.0, 12.0, 0.0, 12.0)")
+def test_the_travel_warning_names_the_point_and_where_it_maps(gui):
+    """Harm named: the operator (or BLACS) cannot tell which point went outside the travel or by
+    how much. A px move names the image point, the motor position and the travel; an mm move the
+    motor position and the travel."""
+    assert gui.ctl.move_px(1300.0, 200.0).result(2).warning == (
+        "Move to (1300.0, 200.0) px: " + outside_travel_words(TRAVEL, (13.0, 2.0), (1300.0, 200.0)))
+    assert gui.ctl.move_mm(13.0, 2.0).result(2).warning == (
+        "Move to (13.0000, 2.0000) mm: outside the travel (0.0, 12.0, 0.0, 12.0) mm, motor (13.0000, 2.0000) mm: "
+        "sent to the KCube; its own limits are the only stop")
 
 
 def test_a_target_a_hair_outside_the_travel_moves_onto_the_edge(gui):
     """Harm stopped: a position measured at the travel edge (a few um past it once the other axis
-    moved, through the calibration's cross terms) cannot be sent again, or a real overshoot gets
-    through. Within 10 um outside, the stage goes onto the edge; further out is refused."""
+    moved, through the calibration's cross terms) gives a red warning every time it is sent
+    again (red lines that are not faults teach the operator to ignore the real ones). Within
+    10 um outside, the stage goes onto the edge, silently; further out is sent as asked, in red."""
     assert gui.ctl.move_mm(-0.004, 12.006).result(2).ok
     assert gui.calls[-2:] == [("X", "move", 0.0), ("Y", "move", 12.0)]
-    assert not gui.ctl.move_mm(-0.02, 5.0).result(2).ok
-    assert gui.moves() == [0.0, 12.0]
+    assert gui.warnings("red_warning") == [] and gui.warnings() == []
+    assert gui.ctl.move_mm(-0.02, 5.0).result(2).warning
+    assert gui.moves() == [0.0, 12.0, -0.02, 5.0]
+
+
+def test_a_jog_past_the_travel_edge_stops_at_the_edge_with_a_warning(gui):
+    """Harm stopped: a jog that would end past the edge was refused whole, so the stage stayed
+    0.2 mm short of an edge it can reach and the operator had to guess a smaller step. It goes to
+    the edge (the other axis moves its full step), with one plain warning; a jog further out from
+    the edge does not move that axis."""
+    assert gui.ctl.move_mm(11.8, 5.0).result(2).ok
+    res = gui.ctl.jog_mm(0.5, 0.25).result(2)
+    assert res.ok and (gui.x.pos, gui.y.pos) == (12.0, 5.25)
+    assert "stopped at the travel edge" in res.warning
+    assert any("stopped at the travel edge" in t for t in gui.warnings())
+    assert gui.warnings("red_warning") == []
+    assert gui.ctl.jog_mm(0.5, 0.0).result(2).ok and gui.x.pos == 12.0
 
 
 def test_a_move_in_pixels_needs_a_calibration(tmp_path):
@@ -95,28 +113,35 @@ def _hold_raster(g, state):
     assert g.ctl.raster_snapshot().state == state
 
 
-@pytest.mark.parametrize("state, code", [("local", "raster_held"), ("armed", "raster_armed"),
-                                         ("running", "raster_running")])
-def test_while_a_raster_is_active_only_its_own_moves_reach_the_stage(gui, state, code):
-    """Harm stopped: a jog, a move, a device home or a user home pulls the stage off an armed or
-    running raster: the next shot ablates a spot off the path and the shot file records the
-    path's point for it. Every other move kind is refused, naming who holds the raster; the
-    raster's own step still moves."""
+@pytest.mark.parametrize("state, move_kind", [("local", None), ("armed", "red_warning"),
+                                              ("running", "warning")])
+def test_hand_moves_during_a_raster_are_done_and_say_what_they_cost(gui, state, move_kind):
+    """Harm named: a hand move while BLACS has the raster armed puts BLACS's next shots on a spot
+    the shot file does not record (its raster point is recorded): that earns a red line. During
+    a continuous run the run's next point moves the stage back: one plain line. Held at the GUI
+    nothing steps the stage, so nothing is said. A device home during any raster sweeps the stage
+    to 0 mm under the laser: red. Every move is done; the raster's own step still moves."""
     gui.ctl.set_user_home("X", 5.0)
     gui.ctl.set_user_home("Y", 5.0)
     _hold_raster(gui, state)
-    futures = [f() for f in (lambda: gui.ctl.move_mm(5.0, 5.0), lambda: gui.ctl.move_axis_mm("Y", 5.0),
-                             lambda: gui.ctl.jog_mm(0.1, 0.0), lambda: gui.ctl.move_px(500.0, 500.0),
-                             lambda: gui.ctl.home("X"), lambda: gui.ctl.go_user_home())]
+    moves = [lambda: gui.ctl.move_mm(5.0, 5.0), lambda: gui.ctl.move_axis_mm("Y", 5.0),
+             lambda: gui.ctl.jog_mm(0.1, 0.0), lambda: gui.ctl.move_px(500.0, 500.0), lambda: gui.ctl.go_user_home()]
+    futures = [f() for f in moves]
+    home = gui.ctl.home("X")
     if state == "running":
         gui.x.gate.set()
     results = [f.result(2) for f in futures]
-    assert [r.code for r in results] == [code] * len(futures)
-    assert all("stop the raster first" in r.words for r in results)
-    assert ("X", "home") not in gui.calls and 5.0 not in gui.moves()
+    assert all(r.ok for r in results) and home.result(2).ok
+    assert ("X", "home") in gui.calls and 5.0 in gui.moves("X")
+    assert all(bool(r.warning) == (move_kind is not None) for r in results)
+    homes = [t for t in gui.warnings("red_warning") if t.startswith("Device home X")]
+    assert len(homes) == 1 and "during a raster" in homes[0]
+    hand = [(k, t) for k, t in gui.messages if k in ("warning", "red_warning") and not t.startswith("Device home")]
+    assert len(hand) == (0 if move_kind is None else len(moves))
+    assert all(k == move_kind for k, _ in hand)
     if state == "local":
         assert gui.ctl.step().ok
-        wait_until(lambda: gui.moves() == [1.0, 2.0])
+        wait_until(lambda: gui.moves("X")[-1] == 1.0)
 
 
 def test_a_raster_point_queued_before_stop_does_not_move_the_stage(gui):
@@ -132,15 +157,16 @@ def test_a_raster_point_queued_before_stop_does_not_move_the_stage(gui):
     gui.x.gate.set()
     gui.idle()
     assert gui.moves("X") == [1.0]
-    assert any("dropped: the raster was stopped" in t for t in gui.refusals())
+    assert gui.refusals() == []                  # the window shows OFF already: no red line per point
 
 
 def test_the_arm_time_travel_filter_and_the_move_check_agree_point_by_point(tmp_path):
-    """Harm stopped: the arm keeps a point the move check then refuses (a raster fails one shot
-    per such point, mid queue), or drops one it would take. With the lab's real calibration and a
-    hull drawn across the 500 px frame (its first column maps below the 0 mm travel floor), every
-    armed point is taken by the move check and every dropped point is refused; the window's
-    reachable() shading says the same."""
+    """Harm stopped: the arm keeps a point the move check then flags as outside the travel (the
+    raster drives the Z912 past its travel, one red line per such point, mid queue), or drops one
+    the stage could reach. With the lab's real calibration and a hull drawn across the 500 px frame
+    (its first column maps below the 0 mm travel floor), every armed point moves without a warning
+    and every dropped point would go outside the travel; the window's reachable() shading says
+    the same."""
     g = Rig(tmp_path, calibrated=False)
     try:
         cal = str(tmp_path / "live.json")
@@ -162,7 +188,7 @@ def test_the_arm_time_travel_filter_and_the_move_check_agree_point_by_point(tmp_
         assert g.ctl.reachable(everything) == [p in armed for p in everything]
         asked = [(p, True) for p in snap.path] + [(p, False) for p in dropped]
         futures = [g.ctl.move_px(*p) for p, _ in asked]
-        assert [f.result(5).ok for f in futures] == [want for _, want in asked]
+        assert [not f.result(5).warning for f in futures] == [want for _, want in asked]
     finally:
         g.close()
 
@@ -239,7 +265,7 @@ def test_a_raster_point_queued_before_a_re_arm_does_not_move_the_stage(gui):
     gui.x.gate.set()
     gui.idle()
     assert gui.moves("X") == [1.0, 3.0]
-    assert any("dropped: the raster was stopped or armed again" in t for t in gui.refusals())
+    assert gui.refusals() == []                  # the new arm shows already: no red line per point
 
 
 def test_a_job_cancelled_while_queued_does_not_stop_the_motor_thread(gui):
