@@ -1,0 +1,110 @@
+"""Raster patterns (raster_paths.py): the points the stage visits, built once and checked up front."""
+from __future__ import annotations
+
+import os
+import sys
+
+import numpy as np
+import pytest
+from scipy.spatial import Delaunay
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from raster_paths import MAX_PATH_POINTS, RasterSpec, nearest_index, points_from_spec  # noqa: E402
+
+
+def _old_hull_loop(hull, xstep, ystep):
+    """The hull fill as it was before the rewrite (one find_simplex call per grid point), copied
+    from raster_paths.py iter_convex_hull_fill with bounds=None, order "xy"."""
+    def arange_inclusive(start, stop, step, include_stop=True, eps=1e-12):
+        n = int(np.floor((stop - start) / step + eps)) + 1
+        if n <= 0:
+            return np.array([], dtype=float)
+        arr = start + step * np.arange(n, dtype=float)
+        if include_stop and len(arr) > 0 and abs(arr[-1] - stop) <= max(eps, abs(step) * 1e-9):
+            arr[-1] = stop
+        return arr
+
+    tri = Delaunay(np.array(hull, dtype=float))
+    xs_all, ys_all = [p[0] for p in hull], [p[1] for p in hull]
+    xs = arange_inclusive(min(xs_all), max(xs_all), xstep, include_stop=False)
+    ys = arange_inclusive(min(ys_all), max(ys_all), ystep, include_stop=False)
+    out = []
+    for x in xs:
+        for y in ys:
+            if tri.find_simplex(np.array([x, y], dtype=float)) >= 0:
+                out.append((float(x), float(y)))
+    return out
+
+
+@pytest.mark.parametrize("hull, step", [
+    ([(0, 0), (40, 0), (40, 40), (0, 40)], (10.0, 10.0)),               # grid points on every edge
+    ([(100, 100), (300, 100), (200, 300)], (7.0, 5.0)),                  # triangle, uneven steps
+    ([(30, 60), (450, 40), (420, 460), (60, 430)], (10.0, 10.0)),        # across a 500 px frame
+    ([(0, 0), (90, 3), (95, 11), (4, 9), (50, 5)], (2.5, 0.5)),          # thin sliver, inner point
+])
+def test_hull_fill_visits_the_same_points_in_the_same_order_as_before(hull, step):
+    """Harm stopped: the faster hull fill ablates a different set of spots, or the same spots in
+    another order, than the pattern operators know (shot records and earlier runs no longer line
+    up). The vectorised fill gives exactly the old loop's points, in its order."""
+    spec = RasterSpec(kind="hull", hull_points=hull, xstep=step[0], ystep=step[1])
+    assert points_from_spec(spec) == _old_hull_loop(hull, *step)
+
+
+def test_square_patterns_snake_from_the_top_left_corner():
+    """Harm stopped: the square patterns visit the grid in another order than drawn (an extra
+    long move back at every row, and spots in the shot records that do not match the preview).
+    X-priority runs row by row from (xmin, ymax), reversing each row; Y-priority column by column."""
+    box = (0.0, 20.0, 0.0, 10.0)
+    sx = points_from_spec(RasterSpec(kind="square_x", bounds=box, xstep=10.0, ystep=10.0))
+    sy = points_from_spec(RasterSpec(kind="square_y", bounds=box, xstep=10.0, ystep=10.0))
+    assert sx == [(0, 10), (10, 10), (20, 10), (20, 0), (10, 0), (0, 0)]
+    assert sy == [(0, 10), (0, 0), (10, 0), (10, 10), (20, 10), (20, 0)]
+
+
+def test_spiral_visits_each_spot_once_and_stays_in_the_scan_bounds():
+    """Harm stopped: the spiral ablates the first spot of every ring twice in a row, or puts
+    dozens of shots on the centre, or leaves the scan bounds the operator drew. Each spot comes
+    once; the last ring (radius 0) is the centre once; nothing lies outside the bounds."""
+    spec = RasterSpec(kind="spiral", origin=(100.0, 100.0), radius=20.0, step=10.0, angle_step=np.pi / 2,
+                      bounds=(0.0, 200.0, 0.0, 200.0))
+    pts = points_from_spec(spec)
+    assert pts[0] == (120.0, 100.0)
+    assert len(set(pts)) == len(pts) and pts[-1] == (100.0, 100.0)
+    assert len(pts) == 4 + 4 + 1
+    clipped = points_from_spec(RasterSpec(kind="spiral", origin=(100.0, 100.0), radius=20.0, step=10.0,
+                                          angle_step=np.pi / 2, bounds=(100.0, 200.0, 0.0, 200.0)))
+    assert clipped and all(x >= 100.0 for x, _ in clipped)
+
+
+@pytest.mark.parametrize("spec, words", [
+    (RasterSpec(kind="hull", hull_points=[(0, 0), (10, 0)], xstep=1, ystep=1),
+     "a convex hull needs at least 3 points"),
+    (RasterSpec(kind="hull", hull_points=[(0, 0), (1, 1), (2, 2)], xstep=1, ystep=1),
+     "degenerate convex hull"),
+    (RasterSpec(kind="hull", hull_points=[(10, 10), (490, 20), (250, 480)], xstep=0.01, ystep=0.01),
+     "hull grid too fine"),
+    (RasterSpec(kind="square_x", bounds=(0, 1000, 0, 1000), xstep=1, ystep=1),
+     f"more than {MAX_PATH_POINTS}: use larger steps"),
+    (RasterSpec(kind="square_y", bounds=(0, 10, 0, 10), xstep=0, ystep=1), "step x and step y must be > 0"),
+    (RasterSpec(kind="square_x", bounds=None), "needs scan bounds"),
+    (RasterSpec(kind="spiral", origin=(900, 900), radius=5, step=1, angle_step=0.5, bounds=(0, 10, 0, 10)),
+     "the spiral pattern has no points"),
+    (RasterSpec(kind="zigzag"), "unknown pattern 'zigzag'"),
+])
+def test_a_pattern_that_cannot_be_built_says_why_before_anything_moves(spec, words):
+    """Harm stopped: a bad pattern freezes the GUI for minutes (a sub-pixel hull grid), arms
+    silently cut short at a cap, or fails with a scipy error nobody can act on. Every such
+    pattern raises ValueError with words that say what to change."""
+    with pytest.raises(ValueError, match=words.replace("(", r"\(").replace(")", r"\)")):
+        points_from_spec(spec)
+
+
+def test_nearest_point_ties_go_to_the_lowest_index():
+    """Harm stopped: with ping-pong every spot is in the path twice; a click picks the way-back
+    copy and the go-to sends the raster's cursor to the wrong half of the path. The nearest point
+    wins and a tie goes to the lowest index; no points gives -1."""
+    path = [(0.0, 0.0), (10.0, 0.0), (10.0, 0.0), (0.0, 0.0)]
+    assert nearest_index(path, 9.0, 1.0) == 1
+    assert nearest_index(path, 1.0, 0.0) == 0
+    assert nearest_index([], 1.0, 1.0) == -1
