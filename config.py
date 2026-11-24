@@ -109,13 +109,15 @@ APP_CONFIG = AppConfig()
 
 
 def load_settings_defaults(path: str = SETTINGS_DEFAULTS_FILE) -> Optional[Dict[str, Any]]:
-    """The saved pattern and display settings, or None when there are none (or unreadable)."""
-    try:
-        with open(path, "r") as f:
-            data = json.load(f)
-    except (OSError, ValueError):
+    """The saved pattern and display settings, or None when no file was saved. Raises OSError or
+    ValueError for a file that is there but cannot be read (not JSON, not a JSON object)."""
+    if not os.path.exists(path):
         return None
-    return data if isinstance(data, dict) else None
+    with open(path, "r") as f:
+        data = json.load(f)
+    if not isinstance(data, dict):
+        raise ValueError("not a JSON object")
+    return data
 
 
 def save_settings_defaults(data: Dict[str, Any], path: str = SETTINGS_DEFAULTS_FILE) -> None:

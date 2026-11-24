@@ -14,6 +14,8 @@ import argparse
 import dataclasses
 import os
 import sys
+import threading
+import traceback
 from typing import Tuple
 
 from PyQt5 import QtGui, QtWidgets
@@ -91,6 +93,20 @@ def build(cfg: config.AppConfig, *, here: str = HERE, remember_theme=None):
     return controller, camera, win
 
 
+def install_excepthook(win) -> None:
+    """An error nobody caught in a Qt slot would make PyQt5 abort the whole GUI. Instead: the
+    traceback goes to the console, one red line to the window's log, and the GUI goes on."""
+    def hook(kind, value, tb):
+        traceback.print_exception(kind, value, tb)
+        if threading.current_thread() is threading.main_thread():   # the log is a widget
+            try:
+                win.log.add(f"Unexpected error ({kind.__name__}: {value}); the GUI goes on. "
+                            "The details are in the console.", error=True)
+            except Exception:
+                pass
+    sys.excepthook = hook
+
+
 def main(argv=None) -> int:
     args = parse_args(argv)
     cfg = app_config(args)
@@ -102,6 +118,7 @@ def main(argv=None) -> int:
     app.setWindowIcon(QtGui.QIcon(os.path.join(HERE, "rastering.ico")))
 
     controller, camera, win = build(cfg, remember_theme=theme.save_light_pref)
+    install_excepthook(win)
     win.resize(1280, 900)
     win.show()
     camera.start()

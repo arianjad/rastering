@@ -763,15 +763,26 @@ class RasterWindow(QtWidgets.QMainWindow):
 
     # ================================================================ settings, theme, exit
     def _apply_saved_settings(self) -> None:
-        d = load_settings_defaults(self._defaults_path) or {}
-        pat = d.get("pattern") if isinstance(d.get("pattern"), dict) else {}
-        if isinstance(pat.get("bounds"), list):
-            self._fill_from_frame = False          # saved bounds win over the first frame's size
-        self.run.apply_settings(d.get("run") if isinstance(d.get("run"), dict) else {})
-        self.pattern.apply_settings(pat)              # emits changed once: the first points and plan
-        jog = d.get("jog") if isinstance(d.get("jog"), dict) else {}
-        if jog.get("step_mm") is not None:
-            self.jog.set_step_mm(float(jog["step_mm"]))
+        path = self._defaults_path
+        try:
+            d = load_settings_defaults(path) or {}
+        except (OSError, ValueError) as e:
+            self.log.add(f"Saved defaults not read from {path} ({e}): the window's own values are shown.",
+                         error=True)
+            d = {}
+        try:
+            pat = d.get("pattern") if isinstance(d.get("pattern"), dict) else {}
+            if isinstance(pat.get("bounds"), list):
+                self._fill_from_frame = False          # saved bounds win over the first frame's size
+            self.run.apply_settings(d.get("run") if isinstance(d.get("run"), dict) else {})
+            self.pattern.apply_settings(pat)              # emits changed once: the first points and plan
+            jog = d.get("jog") if isinstance(d.get("jog"), dict) else {}
+            if jog.get("step_mm") is not None:
+                self.jog.set_step_mm(float(jog["step_mm"]))
+        except Exception as e:          # a hand-edited value of the wrong type: open all the same
+            self.log.add(f"Saved defaults in {path} not all used ({type(e).__name__}: {e}): the values "
+                         "after the bad one are the window's own.", error=True)
+            self._pattern_changed()
 
     def settings(self) -> dict:
         """What File > Save settings as defaults writes."""

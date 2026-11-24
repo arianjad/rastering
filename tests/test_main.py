@@ -6,10 +6,12 @@ from __future__ import annotations
 import dataclasses
 import json
 import os
+import sys
+import time
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
-from PyQt5 import QtWidgets  # noqa: E402
+from PyQt5 import QtCore, QtWidgets  # noqa: E402
 
 APP = QtWidgets.QApplication.instance() or QtWidgets.QApplication([])
 
@@ -53,3 +55,26 @@ def test_a_simulated_copy_neither_loads_nor_writes_the_lab_guis_files(tmp_path):
     os.remove(tmp_path / "elsewhere.json")
     assert _files(tmp_path) == lab
     assert sorted(_files(tmp_path / "sim")) == ["last_calibration_state.json", "settings_defaults.json"]
+
+
+def test_an_error_in_a_button_handler_is_logged_and_the_gui_goes_on(tmp_path, monkeypatch):
+    """Harm stopped: any error nobody caught in a Qt slot (one found: a calibration file whose
+    camera rotation is null, then "Use the calibration's camera settings") made PyQt5 abort the
+    whole GUI, mid-raster, BLACS link and all. main's hook logs one red line and the GUI goes on."""
+    monkeypatch.setattr(sys, "excepthook", sys.excepthook)       # put back after the test
+    ctl, cam, win = main_rastering.build(_sim_cfg(), here=str(tmp_path))
+    try:
+        main_rastering.install_excepthook(win)
+
+        def broken():
+            raise TypeError("int() argument must be a string, not 'NoneType'")
+
+        QtCore.QTimer.singleShot(0, broken)
+        t = time.monotonic()
+        while time.monotonic() - t < 0.3:
+            APP.processEvents()
+        _stamp, text, error = win.log._lines[-1]
+        assert error and "TypeError: int() argument must be a string" in text
+    finally:
+        win.close()
+        ctl.close()

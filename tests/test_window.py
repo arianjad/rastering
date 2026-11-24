@@ -393,6 +393,26 @@ def test_uncalibrated_arrows_move_the_stage_axes_and_say_so(make, tmp_path):
     assert not win.jog.note.isVisibleTo(win)
 
 
+@pytest.mark.parametrize("text", ['{"pattern": {"xstep": 20}, "jog": {"step_mm": "fast"}}', "{not json"])
+def test_a_bad_defaults_file_still_opens_the_window_and_says_so(tmp_path, text):
+    """Harm stopped: one hand-edited value of the wrong type in settings_defaults.json stopped the
+    window opening at all (no GUI for the next shots), and a file that is not JSON was ignored
+    without a word, so the operator's saved pattern silently became the placeholders. The window
+    opens, with what could be used, and says in red that the defaults file was not (all) used."""
+    rig = Rig(tmp_path)
+    (tmp_path / "settings_defaults.json").write_text(text)
+    cam = ThorCameraThread(CAM, camera_class=SimCamera)
+    win = RasterWindow(rig.ctl, cam, camera_config=CAM, geometry=GEOM, log_dir=str(tmp_path / "logs"),
+                       defaults_path=str(tmp_path / "settings_defaults.json"))
+    try:
+        errors = [t for _s, t, error in win.log._lines if error]
+        assert any("settings_defaults.json" in t for t in errors)
+        assert win._points                            # a pattern is built all the same
+    finally:
+        win.close()
+        rig.close()
+
+
 def test_a_blacs_link_that_did_not_start_is_shown_when_the_window_opens(tmp_path, monkeypatch):
     """Harm stopped: the BLACS link fails to start (its port taken, e.g. by another copy of this
     GUI) before the window exists, so the one message saying so went nowhere and the operator
