@@ -115,7 +115,7 @@ def tokens() -> dict:
 
 def load_light_pref() -> bool:
     from PyQt5.QtCore import QSettings
-    return QSettings(*_SETTINGS_KEY).value("light_theme", False, type=bool)
+    return QSettings(*_SETTINGS_KEY).value("light_theme", True, type=bool)   # light by default (Arian 2026-11-24)
 
 
 def save_light_pref(on: bool) -> None:
