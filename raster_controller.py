@@ -353,15 +353,20 @@ class SystemController(QObject):
 
     # --- BLACS (called by blacs_link.RaxLink on its request thread; raise Refused) ---
 
-    def blacs_arm(self) -> Dict[str, int]:
+    def blacs_arm(self) -> Dict[str, Any]:
+        """Arm the pending plan for BLACS, or take the raster the GUI holds or runs where it is.
+        Returns path_len, dropped, and warning when it stopped a continuous run."""
+        warning = ""
         with self._lock:
             s = self._session
-            if s.state == RUNNING:
-                raise Refused("raster_in_continuous_mode", "a continuous raster runs from the GUI; stop it there")
-            if s.state == LOCAL:
-                s.hand_to_blacs()
-                words = (f"BLACS took the armed raster: its next shot goes to point {s.next_index(BLACS)} "
-                         f"of {len(s.path)}.")
+            if s.state in (LOCAL, RUNNING):
+                was_running = s.hand_to_blacs()
+                self._cancel_run_timer_locked()
+                where = f"BLACS's next shot goes to point {s.next_index(BLACS)} of {len(s.path)}."
+                if was_running:
+                    words = warning = "BLACS took the continuous run: it no longer steps by itself; " + where
+                else:
+                    words = "BLACS took the armed raster: " + where
             elif s.state == OFF:
                 words = "BLACS: " + self._arm_locked(for_blacs=True)
             else:
@@ -369,8 +374,8 @@ class SystemController(QObject):
             snap = s.snapshot()
         self.raster_changed.emit(snap)
         if words:
-            self.message.emit("info", words)
-        return {"path_len": len(snap.path), "dropped": snap.dropped}
+            self.message.emit("warning" if warning else "info", words)
+        return {"path_len": len(snap.path), "dropped": snap.dropped, **({"warning": warning} if warning else {})}
 
     def blacs_disarm(self) -> bool:
         with self._lock:

@@ -151,9 +151,8 @@ class RasterSession:
         return was_running
 
     def take_back(self, by: str) -> bool:
-        """The GUI steps the raster from where it is. Returns True when BLACS had it."""
-        if by == BLACS and self.state == RUNNING:
-            raise Refused("raster_in_continuous_mode", "a continuous raster runs from the GUI; stop it there")
+        """The GUI steps the raster from where it is. Returns True when BLACS had it (a continuous
+        run, or nothing armed, stays as it is)."""
         was_armed = self.state == ARMED
         if was_armed:
             self.state = LOCAL

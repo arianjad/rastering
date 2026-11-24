@@ -9,7 +9,8 @@ Requests (REP socket, config.py NetworkConfig.zmq_bind, port 55535). x, y are ca
     PROGRAM_VALUE laser_raster_xy [x, y]    one move of both axes (args.frame "motor": [mm])
     PROGRAM_VALUE laser_raster_x_coord v    one axis; the other stays where the stage is (also _y_)
     PROGRAM_VALUE arm_raster 0              arm the Run tab's pattern for BLACS, or take the raster
-                                            held at the GUI where it is: {mode, armed, dropped}
+                                            held or run at the GUI where it is (a run stops:
+                                            warning): {mode, armed, dropped}
     PROGRAM_VALUE move_to_next 1            armed for BLACS: step and wait for the move, answer the
                                             point (point_index, path_len, target_xy, frame,
                                             calibration_matrix, calibration_offset, wrapped).
@@ -18,6 +19,7 @@ Requests (REP socket, config.py NetworkConfig.zmq_bind, port 55535). x, y are ca
                                             target_xy, frame}, nothing moves.
     PROGRAM_VALUE shots_per_step n          shown in the GUI: {shots_per_step}
     PROGRAM_VALUE disarm_raster 1           the GUI steps the raster BLACS had: {disarmed}
+                                            (false: BLACS had none; a GUI run goes on)
     CHECK_VALUE laser_raster_x_coord[_monitor]   where the stage is [px] (also _y_)
 A move waits up to args.timeout_sec (default 10 s); a move not done by then answers TIMEOUT
 command_timeout, and the move stays queued and still runs. A move done with a warning (outside the
@@ -85,7 +87,8 @@ class RaxLink(RemoteControlServerBase):
                 extra = self._move_axis(_COORDS[connection], value, limit)
             elif connection == "arm_raster":
                 armed = self.c.blacs_arm()
-                extra = {"mode": "step", "armed": armed["path_len"], "dropped": armed["dropped"]}
+                extra = {"mode": "step", "armed": armed["path_len"], "dropped": armed["dropped"],
+                         **({"warning": armed["warning"]} if "warning" in armed else {})}
             elif connection == "move_to_next":
                 extra = self._move_to_next(limit)
             elif connection == "shots_per_step":

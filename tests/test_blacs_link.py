@@ -154,15 +154,34 @@ def test_a_move_while_a_raster_is_active_is_done_and_says_what_it_costs(gui, sta
         assert reply["warning"] in gui.warnings(kind)
 
 
-def test_a_continuous_run_at_the_gui_is_not_taken_over_by_blacs(gui):
-    """Harm stopped: BLACS's arm or disarm ends or converts a continuous raster the operator
-    started at the GUI (the sweep stops half way, or two drivers move the stage). Both answer
-    raster_in_continuous_mode (RaX's code) with the GUI's words; the run stays running."""
+def test_blacs_arm_takes_a_continuous_run_where_it_is_and_says_so(gui):
+    """Harm stopped: BLACS's arm during the operator's continuous run was refused, so BLACS's queue
+    stalled at its first shot although the GUI could hand the raster over (as Hand to BLACS does);
+    or the run went on stepping too (two drivers, shots off their recorded points). The arm takes
+    the run where it is: the run stops stepping, BLACS's next point follows the run's, and one
+    plain line (and the reply's warning) tells the operator the run stopped."""
+    gui.plan(continuous=True, delay_s=5.0)
+    assert gui.ctl.arm().ok
+    wait_until(lambda: gui.moves("X") == [1.0])                  # the run is at point 0, waiting
+    reply = _ok(gui.blacs.program("arm_raster", 0))
+    assert (reply["mode"], reply["armed"], reply["dropped"]) == ("step", 3, 0)
+    assert reply["warning"] == "BLACS took the continuous run: it no longer steps by itself; BLACS's next shot goes to point 1 of 3."
+    assert reply["warning"] in gui.warnings()
+    assert gui.ctl.raster_snapshot().state == "armed"
+    assert _ok(gui.blacs.program("move_to_next", 1))["point_index"] == 1
+    gui.idle()
+    assert gui.moves("X") == [1.0, 1.1]
+
+
+def test_blacs_disarm_leaves_a_continuous_run_alone_without_an_error(gui):
+    """Harm stopped: BLACS unticking Raster mode while the operator's continuous run goes answered
+    an error, a warning on the BLACS tab about nothing: BLACS does not hold the run, so there is
+    nothing to release. It answers disarmed: false, says nothing, and the run goes on."""
     _make_raster(gui, "running")
-    for name, value in (("arm_raster", 0), ("disarm_raster", 1)):
-        status, code, words = _err(gui.blacs.program(name, value))
-        assert (code, words) == ("raster_in_continuous_mode", "a continuous raster runs from the GUI; stop it there")
+    gui.x.gate.set()
+    assert _ok(gui.blacs.program("disarm_raster", 1))["disarmed"] is False
     assert gui.ctl.raster_snapshot().state == "running"
+    assert gui.warnings() == [] and gui.refusals() == []
 
 
 def test_arm_without_a_pattern_or_a_calibration_is_refused_and_arms_nothing(tmp_path):
