@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 
 import numpy as np
 import pytest
@@ -98,6 +99,24 @@ def test_a_pattern_that_cannot_be_built_says_why_before_anything_moves(spec, wor
     pattern raises ValueError with words that say what to change."""
     with pytest.raises(ValueError, match=words.replace("(", r"\(").replace(")", r"\)")):
         points_from_spec(spec)
+
+
+@pytest.mark.parametrize("change, angle_step, words", [
+    (-0.05, 0.2, "the angle step falls to 0 or below on turn 5 of 10"),      # 0.2 - 4 * 0.05 = 0
+    (0.0, 0.00005, "the spiral needs about 1,256,641 angle steps"),          # 10 turns of 125 664, + centre
+])
+def test_a_spiral_that_would_freeze_the_window_is_refused_at_once(change, angle_step, words):
+    """Harm stopped: an angle change that drives the angle step to 0, or a tiny angle step, made
+    the spiral loop run millions of steps on the GUI thread (bounds that clip the spiral keep it
+    from stopping at the point cap): the window froze for seconds, and during a continuous run
+    Esc and Stop did nothing meanwhile. Such a spiral is refused at once (well under 0.1 s), with
+    words that say what to change."""
+    spec = RasterSpec(kind="spiral", origin=(500.0, 500.0), radius=200.0, step=20.0, angle_step=angle_step,
+                      angle_step_change=change, bounds=(0.0, 10.0, 0.0, 10.0))
+    t0 = time.perf_counter()
+    with pytest.raises(ValueError, match=words):
+        points_from_spec(spec)
+    assert time.perf_counter() - t0 < 0.1
 
 
 def test_nearest_point_ties_go_to_the_lowest_index():

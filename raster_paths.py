@@ -5,6 +5,7 @@ up front, and raises ValueError with words for the operator when it cannot.
 """
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
@@ -17,7 +18,9 @@ Bounds = Tuple[float, float, float, float]  # xmin, xmax, ymin, ymax [px]
 KINDS = ("square_x", "square_y", "spiral", "hull")
 MAX_PATH_POINTS = 50_000        # the longest path the GUI draws or arms
 _MAX_HULL_CELLS = 5_000_000     # hull grid cells tested at most (memory and time)
-_MAX_SPIRAL_STEPS = 100 * MAX_PATH_POINTS   # spiral angle steps at most, clipped ones included
+# Spiral angle steps at most, clipped ones included: the spiral is built point by point on the
+# GUI thread (about 0.3 s per million steps), so more would freeze the window.
+_MAX_SPIRAL_STEPS = 1_000_000
 
 
 @dataclass(frozen=True)
@@ -123,6 +126,7 @@ def _spiral(spec: RasterSpec) -> List[XY]:
         raise ValueError("spiral radius must be >= 0 and spiral step > 0")
     if spec.angle_step <= 0:
         raise ValueError("spiral angle step must be > 0")
+    _check_spiral_size(spec)
     ox, oy = spec.origin
     r, alpha, d_alpha = float(spec.radius), 0.0, float(spec.angle_step)
     xmin, xmax, ymin, ymax = spec.bounds if spec.bounds is not None else (-np.inf, np.inf, -np.inf, np.inf)
@@ -135,7 +139,7 @@ def _spiral(spec: RasterSpec) -> List[XY]:
             if r < -1e-9 * spec.step:
                 return pts
         centre = r <= 1e-9 * spec.step
-        x, y = (ox, oy) if centre else (ox + r * np.cos(alpha), oy + r * np.sin(alpha))
+        x, y = (ox, oy) if centre else (ox + r * math.cos(alpha), oy + r * math.sin(alpha))
         alpha += d_alpha
         if xmin <= x <= xmax and ymin <= y <= ymax:
             pts.append((float(x), float(y)))
@@ -144,6 +148,27 @@ def _spiral(spec: RasterSpec) -> List[XY]:
         if centre:
             return pts
     raise ValueError("the spiral needs too many steps: use a larger angle step or spiral step")
+
+
+def _check_spiral_size(spec: RasterSpec) -> None:
+    """Refuse, before the loop, a spiral whose angle step reaches 0 (it would never finish a turn)
+    or that needs more than _MAX_SPIRAL_STEPS steps: turns x steps per turn, plus the centre."""
+    turns = max(0, math.ceil(spec.radius / spec.step - 1e-9))     # rings of radius > 0
+    if turns > _MAX_SPIRAL_STEPS:
+        raise ValueError(f"the spiral has {turns:,} turns, more than {_MAX_SPIRAL_STEPS:,} steps allow: "
+                         "use a larger spiral step or a smaller radius")
+    if turns == 0:
+        return
+    d = spec.angle_step + np.arange(turns) * float(spec.angle_step_change)   # angle step of each turn
+    bad = np.flatnonzero(d <= 0)
+    if bad.size:
+        raise ValueError(f"the angle step falls to 0 or below on turn {bad[0] + 1} of {turns} (it changes by "
+                         "the angle change each turn): make the angle change less negative, or the spiral "
+                         "step larger")
+    steps = int(np.ceil(2 * np.pi / d).sum()) + 1
+    if steps > _MAX_SPIRAL_STEPS:
+        raise ValueError(f"the spiral needs about {steps:,} angle steps, more than {_MAX_SPIRAL_STEPS:,}: "
+                         "use a larger angle step or spiral step")
 
 
 def _hull(hull: Sequence[XY], xstep: float, ystep: float) -> List[XY]:
