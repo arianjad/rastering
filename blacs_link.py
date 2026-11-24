@@ -5,7 +5,8 @@ raster_controller.py at 5fe760e: `_RasteringV2Server._handle_program` and `_hand
 PUB part of `SystemController._zmq_loop`, `raster_point_meta`). The envelope, HELLO and PING are
 RaX's zmq_v2.py (beambox-daq `bbx_zmq.zmq_v2`, copied whole from RaX).
 
-Requests (REP socket, config.py NetworkConfig.zmq_bind, port 55535). x, y are camera px.
+Requests (REP socket, config.py NetworkConfig.zmq_bind, port 55535). x, y are camera px. BLACS
+sends every value as a float (arm_raster 0.0, shots_per_step 2.0), as RaX does.
     PROGRAM_VALUE laser_raster_xy [x, y]    one move of both axes (args.frame "motor": [mm])
     PROGRAM_VALUE laser_raster_x_coord v    one axis; the other stays where the stage is (also _y_)
     PROGRAM_VALUE arm_raster 0              arm the Run tab's pattern for BLACS, or take the raster
@@ -330,9 +331,10 @@ def _pair(value):
 
 
 def _shots(value) -> int:
+    """BLACS sends numbers as floats (2.0, or 2.9999999999): rounded, not truncated."""
     try:
-        n = int(value)
-    except (TypeError, ValueError):
+        n = int(round(float(value)))
+    except (TypeError, ValueError, OverflowError):
         n = 0
     if n < 1:
         raise Refused("invalid_value", f"shots_per_step must be an integer >= 1; got {value!r}")

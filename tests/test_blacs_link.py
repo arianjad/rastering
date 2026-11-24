@@ -258,6 +258,22 @@ def test_shots_per_step_is_held_by_the_gui_and_reported(gui):
     assert gui.ctl.raster_snapshot().shots_per_step == 3
 
 
+def test_blacs_float_values_are_taken_as_the_whole_numbers_they_stand_for(gui):
+    """Harm stopped: BLACS sends every value as a float, as RaX does (arm_raster 0.0, shots_per_step
+    2.0, move_to_next 1.0); a GUI that wants ints refuses them, or truncates a count that arrives
+    as 2.9999999999 to 2, so the GUI shows another shots per point than BLACS steps by. Floats
+    work for every request; a count is rounded, not truncated."""
+    _ok(gui.blacs.program("arm_raster", 0.0))
+    assert _ok(gui.blacs.program("shots_per_step", 2.0))["shots_per_step"] == 2
+    assert _ok(gui.blacs.program("shots_per_step", 2.9999999999))["shots_per_step"] == 3
+    assert _ok(gui.blacs.program("move_to_next", 1.0))["point_index"] == 0
+    assert _ok(gui.blacs.program("disarm_raster", 1.0))["disarmed"] is True
+    gui.ctl.stop_raster()
+    _ok(gui.blacs.program("laser_raster_xy", [500.0, 600.0]))
+    _ok(gui.blacs.program("laser_raster_y_coord", 650.0))
+    assert gui.calls[-2:] == [("X", "move", 5.0), ("Y", "move", 6.5)]
+
+
 def test_blacs_xy_in_a_continuous_runs_delay_is_done_at_once(gui):
     """Harm stopped: BLACS's x, y during a continuous run with a long delay between points waited
     out the delay (10 s or more: BLACS heard "still queued and will run", and the move ran after
