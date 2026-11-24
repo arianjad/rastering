@@ -26,7 +26,7 @@ the reason.
 | Ping-pong | Kept |
 | Save position history | Kept: "Record to a file" (CSV: time_s, x_mm, y_mm, x_px, y_px, in `logs/`) |
 | Group "Stepping / Remote control" | Merged into "Raster" and "Go to a point" |
-| Point index box | Kept: "Point" (counts from 1; shot file point_index = point − 1) |
+| Point index box | Kept: "Point", counted from 0: the same number as point_index in the shot file (also in the control bar and the log) |
 | Move to selected | Kept: "Go to selected point". Dropped: arming first when idle (arm, then pick). |
 | Arm for remote / Return to local / Give to BLACS (one button, three faces) | Split: "Arm for BLACS", "Take back", "Hand to BLACS" |
 | Re-arm from pending | Kept: "Re-arm with edited pattern", shown only when the pattern changed since arming |
@@ -39,7 +39,7 @@ the reason.
 | Show rastering direction | Kept: "Show the order"; now drawn while armed too |
 | Step x, y (px) | Kept; shown for square and hull |
 | Spiral group | Kept: shown for spiral only |
-| Spiral radius, radial step, angle step, angle change | Kept [px, px, rad, rad]; defaults 200 px, 20 px, 0.2 rad, 0 rad (placeholders: set and save your own) |
+| Spiral radius, radial step, angle step, angle change | Kept [px, px, rad, rad]; defaults 200 px, 20 px, 0.2 rad, 0 rad (placeholders: set and save your own). Refused at once, with words: an angle change that brings the angle step to 0, or more than 1 000 000 angle steps (the window would freeze) |
 | Spiral centre x, y | Kept; also set by a click on the image; now saved with the defaults |
 | Scan bounds group | Kept: shown for square and spiral (the hull never used them) |
 | x/y lower/upper | Kept; saved bounds now survive the first camera frame; "Whole image" button added |
@@ -62,7 +62,7 @@ the reason.
 | Device Home X, Y, Both | Kept; greyed while a raster is active |
 | User home readings, setpoints, Set X / Set Y | Kept: one Set for x and y; "Here" fills them from the stage; saved into the calibration file at once |
 | User home Go X / Go Y | Dropped: "Go to user home" (both axes) under Move stage, or Go to x, y |
-| Backlash readings, setpoints, Set X / Set Y | Kept: one Set; saved into the calibration file once the motors answer |
+| Backlash readings, setpoints, Set X / Set Y | Kept: one Set; saved into the calibration file once the motors answer (an axis that fails is not waited for; a calibration loaded meanwhile is not written); greyed while a raster is active |
 | Display Options group | Merged |
 | Show current position | Dropped: the stage crosshair is always shown |
 | Display points + Last N | Merged: "Trail on image", last N positions (Run step) |
@@ -71,8 +71,8 @@ the reason.
 ## Jog / Move panel → Move stage
 | Old | Now |
 |---|---|
-| Step x, Step y (motor units) | Merged: one "Step" [mm] along the arrow's screen direction |
-| Jog Up / Left / Right / Down | Kept: arrows; through the calibration matrix when calibrated, the rig's fixed axes otherwise; greyed with the reason while a raster is active |
+| Step x, Step y (motor units) | Merged: one "Step" [mm] along the arrow's screen direction. A number typed in any box counts when a button reads it, Enter or not |
+| Jog Up / Left / Right / Down | Kept: arrows; through the calibration matrix when calibrated; the rig's fixed axes otherwise, with a note under the pad to check the direction on the image; greyed with the reason while a raster is active |
 | Clear manual markers | Dropped: the go-to mark is the only manual mark; trail 0 hides the trail |
 | x, y (motor units) | Kept: "x", "y" [mm, ±1000]; a click on the image on the Setup step fills them |
 | Move to Position | Kept: "Go to x, y" |
@@ -98,7 +98,7 @@ the reason.
 |---|---|
 | Owner chip | Kept: state block OFF / RUNNING / ARMED FOR BLACS / HELD AT GUI |
 | Motor chip | Kept: Stage position X, Y [mm] |
-| Progress chip | Kept: Point "n of N" |
+| Progress chip | Kept: Point "i of N": i as point_index in the shot file (first point 0), N the path length |
 | Calibration chip | Kept: None / n of 3 clicks / Ready / Stale |
 | Shots chip | Kept: Shots per point |
 | FPS chip | Kept: Camera fps; "No frames" after 3 s |
@@ -110,12 +110,12 @@ the reason.
 ## Image
 | Old | Now |
 |---|---|
-| Left click | Changed, by step: calibrating → calibration spot; Pattern → hull corner or spiral centre; Run → nearest armed point; Setup → Go to x, y target |
+| Left click | Changed, by step: calibrating → calibration spot; Pattern → hull corner or spiral centre; Run → nearest armed point (nothing armed: Go to x, y target); Setup → Go to x, y target |
 | Ctrl + left click | Kept: pick the nearest armed point, on any step |
 | Right click, wheel, drag | Kept: wheel zooms, drag pans. Dropped: context menu and "A" button; "Fit" button and View > Fit image instead |
 | Pointer crosshair | Kept; hides when the pointer leaves |
 | Overlay colours | Changed: path colour = pattern (rings: not armed, dots: armed), spot colour = stage crosshair and trail, diamonds = hull corners, hatched = out of stage travel |
-| Shortcuts | Kept Ctrl+D; added Esc (stop the raster, cancel a calibration), Ctrl+Q |
+| Shortcuts | Kept Ctrl+D; added Esc (stop any raster, also one BLACS armed a moment ago; cancel a calibration), Ctrl+Q |
 | Frame painting | Kept: newest frame only, at most 25 per second |
 
 ## Start and exit
