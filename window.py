@@ -80,6 +80,9 @@ def gates(state: str, *, calibrated: bool, calibrating: bool, busy: bool, patter
         "hand": need((state in ("local", "running"), "BLACS has it already." if state == "armed"
                       else "Arm the pattern first.")),
         "take_back": need((state == "armed", "BLACS does not have the raster.")),
+        "pause": need((state == "running", "No continuous run to pause.")),
+        "continue": need((state == "local", "It is running already." if state == "running"
+                          else STEP_WHY.get(state, ""))),
         "rearm": need((edited, ""), (calibrated, NEED_CAL), (pattern_ok, NEED_PATTERN)),
         "goto": need((state in ("local", "armed"), STEP_WHY["running"] if state == "running"
                       else "Arm the pattern first."),
@@ -312,6 +315,8 @@ class RasterWindow(QtWidgets.QMainWindow):
         r.stop_btn.clicked.connect(c.stop_raster)
         r.hand_btn.clicked.connect(c.hand_to_blacs)
         r.take_back_btn.clicked.connect(c.take_back)
+        r.pause_btn.clicked.connect(c.pause_raster)
+        r.continue_btn.clicked.connect(c.continue_raster)
         r.rearm_btn.clicked.connect(lambda: c.arm())
         r.goto_btn.clicked.connect(self._go_to_point)
         r.point_box.valueChanged.connect(lambda n: c.select_point(n) if n >= 0 else None)
@@ -387,7 +392,8 @@ class RasterWindow(QtWidgets.QMainWindow):
                              ("user_home_here", (st.user_home_here_btn,)),
                              ("start", (r.start_btn,)), ("arm_blacs", (r.arm_blacs_btn,)),
                              ("step", (r.step_btn,)), ("stop", (r.stop_btn,)), ("hand", (r.hand_btn,)),
-                             ("take_back", (r.take_back_btn,)), ("rearm", (r.rearm_btn,)),
+                             ("take_back", (r.take_back_btn,)), ("pause", (r.pause_btn,)),
+                             ("continue", (r.continue_btn,)), ("rearm", (r.rearm_btn,)),
                              ("goto", (r.goto_btn,)), ("point", (r.point_box,))):
             for w in widgets:
                 _gate(w, *g[key])

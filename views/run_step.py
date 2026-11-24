@@ -12,7 +12,7 @@ from .widgets import IntBox, NumberBox, Section, label, set_prop
 # What the raster does now, in one sentence per state (the menu's raster_state words).
 STATE_SENTENCES = {
     "off": "Nothing moves the stage on its own.",
-    "local": "Armed and held here: Step moves to the next point.",
+    "local": "Armed and held here: Step moves to the next point; Continue runs on by itself.",
     "armed": "BLACS steps the stage: one point per group of shots.",
     "running": "Running: the stage goes through the points by itself.",
 }
@@ -48,16 +48,20 @@ class RunStep(QtWidgets.QWidget):
                                                "A move already under way finishes.")
         self.hand_btn = _button("Hand to BLACS", "BLACS steps the armed path from the point it is at.")
         self.take_back_btn = _button("Take back", "Step the armed path here, from the point it is at.")
+        self.pause_btn = _button("Pause", "Hold the continuous run here, at the point it is at. "
+                                          "A move already under way finishes.")
+        self.continue_btn = _button("Continue", "Run on by itself from the point the stage is at (or the one "
+                                                "Go to selected point went to), with the delay per point.")
         self.rearm_btn = _button("Re-arm with edited pattern",
                                  "Replace the armed path with the pattern on the image, from its first "
-                                 "point. BLACS keeps the raster if it has it.")
+                                 "point. It stays as it is: held here, running, or with BLACS.")
         grid = QtWidgets.QGridLayout()
         grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(8)
         for i, b in enumerate((self.start_btn, self.arm_blacs_btn, self.step_btn, self.stop_btn,
-                               self.hand_btn, self.take_back_btn)):
+                               self.hand_btn, self.take_back_btn, self.pause_btn, self.continue_btn)):
             grid.addWidget(b, i // 2, i % 2)
-        grid.addWidget(self.rearm_btn, 3, 0, 1, 2)
+        grid.addWidget(self.rearm_btn, 4, 0, 1, 2)
         g.addLayout(grid, 1, 0, 1, 2)
         lay.addWidget(r)
 
@@ -156,7 +160,7 @@ class RunStep(QtWidgets.QWidget):
     def set_primary(self, button: QtWidgets.QPushButton) -> None:
         """Style one button as the main action now."""
         for b in (self.start_btn, self.arm_blacs_btn, self.step_btn, self.stop_btn, self.hand_btn,
-                  self.take_back_btn, self.rearm_btn):
+                  self.take_back_btn, self.pause_btn, self.continue_btn, self.rearm_btn):
             set_prop(b, "kind", "primary" if b is button else "edited" if b is self.rearm_btn else "")
 
     # ---------------- saved settings ----------------

@@ -21,6 +21,7 @@ the reason.
 | Auto Raster | Merged: "Start" (Continuous on) or "Arm here" (step at the GUI) |
 | Stop | Kept: "Stop (Esc)"; greyed when nothing is armed |
 | Step | Kept; enabled only while held at the GUI |
+| (none) | New: "Pause" holds a continuous run at the GUI at its point; "Continue" runs a held raster on by itself from the point the stage is at. Go to selected point N, then Continue: the run goes on from N |
 | Continuous | Kept; editable while armed (the edit shows the edited notice, Re-arm applies it) |
 | Delay (s) | Kept: "Delay per point" [s], enabled with Continuous |
 | Ping-pong | Kept |
@@ -28,8 +29,8 @@ the reason.
 | Group "Stepping / Remote control" | Merged into "Raster" and "Go to a point" |
 | Point index box | Kept: "Point", counted from 0: the same number as point_index in the shot file (also in the control bar and the log) |
 | Move to selected | Kept: "Go to selected point". Dropped: arming first when idle (arm, then pick). |
-| Arm for remote / Return to local / Give to BLACS (one button, three faces) | Split: "Arm for BLACS", "Take back", "Hand to BLACS" |
-| Re-arm from pending | Kept: "Re-arm with edited pattern", shown only when the pattern changed since arming |
+| Arm for remote / Return to local / Give to BLACS (one button, three faces) | Split: "Arm for BLACS", "Take back", "Hand to BLACS". After Go to selected point N, BLACS's next shot goes to N itself (the log says which point) |
+| Re-arm from pending | Kept: "Re-arm with edited pattern", shown only when the pattern changed since arming; the raster stays as it was (held, running, or with BLACS) |
 
 ## Pattern tab → Pattern step
 | Old | Now |

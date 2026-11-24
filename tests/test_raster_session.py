@@ -159,6 +159,63 @@ def test_a_motor_failure_halts_a_continuous_run_with_its_words(gui):
     assert gui.moves() == []
 
 
+def test_re_arming_keeps_the_raster_held_or_running_as_it_was(gui):
+    """Harm stopped: from HELD AT GUI with Continuous ticked, "Re-arm with edited pattern" started
+    a continuous run at point 0, so the stage moved by itself (under the laser) when the operator
+    only meant to swap the pattern. A re-arm keeps the state: held stays held, nothing moves; a
+    run keeps running."""
+    gui.plan()
+    assert gui.ctl.arm().ok
+    gui.plan(continuous=True, pingpong=True)                    # the edited pattern
+    assert gui.ctl.arm().ok
+    gui.idle()
+    time.sleep(0.03)
+    assert (gui.ctl.raster_snapshot().state, gui.moves()) == ("local", [])
+
+    gui.ctl.stop_raster()
+    gui.plan(continuous=True, delay_s=0.01)
+    assert gui.ctl.arm().ok
+    gui.plan(continuous=False, pingpong=True)
+    assert gui.ctl.arm().ok
+    assert gui.ctl.raster_snapshot().state == "running"
+
+
+def test_pause_holds_a_run_and_continue_runs_on_from_the_point_picked(gui):
+    """Harm stopped: a continuous run could not be paused (Stop loses the place; the detour through
+    Hand to BLACS made the log blame BLACS) nor resumed from a chosen point (Re-arm starts again at
+    point 0: spots ablated twice). Pause holds the run at its point; Go to selected point N, then
+    Continue, runs on from N (moved to and waited at again), then N + 1."""
+    gui.plan(continuous=True, delay_s=0.02)
+    assert gui.ctl.arm().ok
+    wait_until(lambda: len(gui.moves("X")) >= 2)
+    assert gui.ctl.pause_raster().ok
+    gui.idle()
+    n = len(gui.moves("X"))
+    time.sleep(0.06)
+    assert gui.ctl.raster_snapshot().state == "local" and len(gui.moves("X")) == n
+    assert gui.ctl.go_to_point(2).ok
+    assert gui.ctl.continue_raster().ok
+    wait_until(lambda: len(gui.moves("X")) >= n + 3)
+    gui.ctl.stop_raster()
+    assert gui.moves("X")[n:n + 3] == [1.2, 1.2, 1.0]            # go to 2; run on from 2; then 0
+
+
+def test_handing_to_blacs_after_a_go_to_gives_blacs_that_point_first(gui):
+    """Harm stopped: the operator took the raster back, went to point 2 to shoot it again and
+    handed it to BLACS; BLACS's next shot went to point 3, so point 2 never got its shot. After a
+    go to N, BLACS's next point is N (the stage is there already), and the log says so."""
+    gui.plan()
+    assert gui.ctl.arm(for_blacs=True).ok
+    assert gui.ctl.blacs_next_point()[0] == 0
+    gui.ctl.take_back()
+    assert gui.ctl.go_to_point(2).ok
+    assert gui.ctl.hand_to_blacs().ok
+    assert gui.messages[-1] == ("info", "BLACS steps the raster: its next shot goes to point 2 of 3.")
+    i, _, _, wrapped, future = gui.ctl.blacs_next_point()
+    assert (i, wrapped, future.result(2).ok) == (2, False, True)
+    assert gui.ctl.blacs_next_point()[:4:3] == (0, True)          # then on along the path
+
+
 def test_a_continuous_runs_delay_does_not_hold_up_the_stage_queue(gui):
     """Harm stopped: in a continuous run's delay between points the motor thread slept, so every
     other request waited out the delay: the window's moves, and BLACS's x, y (with a delay of

@@ -147,6 +147,22 @@ def test_buttons_offer_only_what_the_raster_state_allows(make):
     assert win.run.start_btn.toolTip() == "Calibrate first (Setup)."
 
 
+def test_pause_and_continue_buttons_hold_and_resume_a_run(make):
+    """Harm stopped: the window had no way to pause a continuous run and pick it up again; the
+    operator had to Stop (losing the place) or misuse Hand to BLACS. Pause is offered while it
+    runs and holds it at the GUI; Continue is offered while held and runs it again."""
+    rig, win = make(run={"continuous": True, "delay_s": 0.02})
+    win.run.start_btn.click()
+    pump_until(lambda: win.bar.status()["state"] == "running")
+    assert win.run.pause_btn.isEnabled() and not win.run.continue_btn.isEnabled()
+    win.run.pause_btn.click()
+    pump_until(lambda: win.bar.status()["state"] == "local")
+    assert win.run.continue_btn.isEnabled() and not win.run.pause_btn.isEnabled()
+    win.run.continue_btn.click()
+    pump_until(lambda: win.bar.status()["state"] == "running")
+    win.run.stop_btn.click()
+
+
 def test_escape_stops_a_continuous_run(make):
     """Harm stopped: a continuous run keeps moving the stage (and the laser keeps ablating) while
     the operator looks for the Stop button. Esc anywhere in the window stops it; no further

@@ -90,6 +90,7 @@ class SystemController(QObject):
         self._lock = threading.RLock()
         self._session = RasterSession()
         self._run_timer: Optional[threading.Timer] = None   # a continuous run's delay before its next point
+        self._leg = 0    # counts arms, pauses and continues: a run's point from before one takes no next step
         self._cal_file: Optional[CalibrationFile] = None
         self._clicks: Optional[_Clicks] = None
         self._user_home: XY = (0.0, 0.0)
@@ -270,19 +271,50 @@ class SystemController(QObject):
         self.raster_changed.emit(snap)
         return Result(True)
 
+    def pause_raster(self) -> Result:
+        """Hold a continuous run at the GUI, at the point it is at (a move under way finishes)."""
+        try:
+            with self._lock:
+                i = self._session.pause()
+                self._cancel_run_timer_locked()
+                self._leg += 1
+                snap = self._session.snapshot()
+        except Refused as r:
+            return self._refused(r)
+        self.raster_changed.emit(snap)
+        self.message.emit("info", f"Run paused at point {i} of {len(snap.path)}: Continue runs on from it; "
+                                  "Go to selected point picks another.")
+        return Result(True)
+
+    def continue_raster(self) -> Result:
+        """Run a raster held at the GUI by itself again, from the point it is at (moved to and waited
+        at again), with the armed plan's delay."""
+        try:
+            with self._lock:
+                i, pt = self._session.resume()
+                self._cancel_run_timer_locked()
+                self._leg += 1
+                self._queue_run_move_locked(i, pt)
+                snap = self._session.snapshot()
+        except Refused as r:
+            return self._refused(r)
+        self.raster_changed.emit(snap)
+        self.message.emit("info", f"Run continues from point {i} of {len(snap.path)}.")
+        return Result(True)
+
     def hand_to_blacs(self) -> Result:
         """BLACS steps the armed raster from where it is (a continuous run stops)."""
         try:
             with self._lock:
                 was_running = self._session.hand_to_blacs()
                 self._cancel_run_timer_locked()
+                nxt = self._session.next_index(BLACS)
                 snap = self._session.snapshot()
         except Refused as r:
             return self._refused(r)
         self.raster_changed.emit(snap)
-        nxt = (snap.point_index + 1) % len(snap.path)
         self.message.emit("info", ("Continuous run stopped; " if was_running else "")
-                          + f"BLACS steps the raster from point {nxt} of {len(snap.path)}.")
+                          + f"BLACS steps the raster: its next shot goes to point {nxt} of {len(snap.path)}.")
         return Result(True)
 
     def take_back(self) -> Result:
@@ -314,7 +346,8 @@ class SystemController(QObject):
                 raise Refused("raster_running", "a continuous raster runs from the GUI; stop it there")
             if s.state == LOCAL:
                 s.hand_to_blacs()
-                words = "BLACS took the armed raster; it steps from the current point."
+                words = (f"BLACS took the armed raster: its next shot goes to point {s.next_index(BLACS)} "
+                         f"of {len(s.path)}.")
             elif s.state == OFF:
                 words = "BLACS: " + self._arm_locked(for_blacs=True)
             else:
@@ -480,9 +513,15 @@ class SystemController(QObject):
         if not kept:
             raise Refused("no_raster_configured", f"every point of the pattern is outside the motor travel {travel} mm: "
                                                   "move the pattern toward the reachable part of the frame, or recalibrate")
-        state = ARMED if (for_blacs or s.state == ARMED) else RUNNING if plan.continuous else LOCAL
+        if for_blacs or s.state == ARMED:
+            state = ARMED
+        elif s.state in (LOCAL, RUNNING):
+            state = s.state                       # a re-arm keeps it held or running: never starts a held raster
+        else:
+            state = RUNNING if plan.continuous else LOCAL
         s.arm(plan, kept, dropped=len(pts) - len(kept), state=state)
         self._cancel_run_timer_locked()           # a continuous run of the old arm takes no more steps
+        self._leg += 1
         if state == RUNNING:
             self._queue_run_point_locked()
         how = {LOCAL: "step it at the GUI", ARMED: "BLACS steps it", RUNNING: "running"}[state]
@@ -506,26 +545,30 @@ class SystemController(QObject):
 
     def _queue_run_point_locked(self) -> bool:
         """Queue the continuous run's next point (caller holds the lock). Returns wrapped."""
-        s = self._session
-        i, pt, wrapped = s.next_point(RUN)
-        run = s.run
-        self._stage.submit(Command(f"Raster point {i} of {len(s.path)}", "move", px=pt, raster_run=run,
-                                   quiet=True, then=lambda res: self._after_run_point(res, run)))
+        i, pt, wrapped = self._session.next_point(RUN)
+        self._queue_run_move_locked(i, pt)
         return wrapped
 
-    def _after_run_point(self, res: Result, run: int) -> None:
+    def _queue_run_move_locked(self, i: int, pt: XY) -> None:
+        """Queue the move to point i of the continuous run; the run goes on from its follow-up."""
+        s = self._session
+        run, leg = s.run, self._leg
+        self._stage.submit(Command(f"Raster point {i} of {len(s.path)}", "move", px=pt, raster_run=run,
+                                   quiet=True, then=lambda res: self._after_run_point(res, leg)))
+
+    def _after_run_point(self, res: Result, leg: int) -> None:
         """Motor thread, after a continuous run's point: halt on a failure; else queue the next
         point now or, after the plan's delay, from a timer (the motor thread never waits)."""
         with self._lock:
             s = self._session
-            if s.state != RUNNING or s.run != run:
+            if s.state != RUNNING or self._leg != leg:
                 return
             halted = not res.ok
             if halted:
                 s.stop()
                 snap = s.snapshot()
             elif s.plan.delay_s > 0:
-                self._run_timer = threading.Timer(s.plan.delay_s, self._continue_run, args=(run,))
+                self._run_timer = threading.Timer(s.plan.delay_s, self._continue_run, args=(leg,))
                 self._run_timer.daemon = True
                 self._run_timer.start()
                 return
@@ -533,13 +576,13 @@ class SystemController(QObject):
             self.raster_changed.emit(snap)
             self.message.emit("error", f"Raster halted: {res.words}")
             return
-        self._continue_run(run)
+        self._continue_run(leg)
 
-    def _continue_run(self, run: int) -> None:
-        """Queue the continuous run's next point, unless the run was stopped, handed to BLACS or
-        armed again meanwhile."""
+    def _continue_run(self, leg: int) -> None:
+        """Queue the continuous run's next point, unless the run was stopped, paused, handed to
+        BLACS or armed again meanwhile."""
         with self._lock:
-            if self._session.state != RUNNING or self._session.run != run:
+            if self._session.state != RUNNING or self._leg != leg:
                 return
             self._run_timer = None
             wrapped = self._queue_run_point_locked()

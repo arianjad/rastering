@@ -66,6 +66,7 @@ class RasterSession:
         self.state, self.plan, self.path = OFF, None, ()
         self.pattern_len = self.dropped = 0
         self.cursor = self.selected = -1
+        self.parked = False    # a go to put the stage on the cursor's point; nobody stepped since
 
     def arm(self, plan: RasterPlan, points: Sequence[XY], *, dropped: int, state: str) -> None:
         """Arm one pass of `points` [px] (already inside the travel) in `state` (LOCAL, ARMED or
@@ -75,20 +76,30 @@ class RasterSession:
         self.path = pts + pts[::-1] if plan.pingpong else pts
         self.pattern_len, self.dropped = len(pts), int(dropped)
         self.cursor = self.selected = -1
+        self.parked = False
         self.run += 1
+
+    def next_index(self, by: str) -> int:
+        """The point `by`'s next step goes to. BLACS's first step after a go to N is N itself: the
+        operator went there for BLACS to shoot it."""
+        if by == BLACS and self.parked:
+            return self.cursor
+        return 0 if self.cursor == len(self.path) - 1 else self.cursor + 1
 
     def next_point(self, by: str) -> Tuple[int, XY, bool]:
         """Advance the cursor for `by` (GUI, BLACS or RUN): (index, point, wrapped), wrapped = this
         step went from the last point back to point 0."""
         if self.state != _STEPS_IN[by]:
             raise Refused(*_step_refusal(by, self.state))
-        wrapped = self.cursor == len(self.path) - 1
-        self.cursor = 0 if wrapped else self.cursor + 1
+        stays = by == BLACS and self.parked
+        wrapped = not stays and self.cursor == len(self.path) - 1
+        self.cursor, self.parked = self.next_index(by), False
         return self.cursor, self.path[self.cursor], wrapped
 
     def go_to(self, index: int) -> Tuple[int, XY, bool]:
-        """The GUI's go to point `index` (clamped): the next step continues after it. Takes the
-        raster back from BLACS. Returns (index, point, taken back from BLACS)."""
+        """The GUI's go to point `index` (clamped): the GUI's next step continues after it, BLACS's
+        next step (once handed over) shoots it. Takes the raster back from BLACS. Returns (index,
+        point, taken back from BLACS)."""
         if self.state == OFF:
             raise Refused("not_armed", "no raster armed: arm the raster first")
         if self.state == RUNNING:
@@ -96,7 +107,24 @@ class RasterSession:
         taken = self.state == ARMED
         self.state = LOCAL
         self.cursor = self.selected = max(0, min(int(index), len(self.path) - 1))
+        self.parked = True
         return self.cursor, self.path[self.cursor], taken
+
+    def pause(self) -> int:
+        """The GUI's Pause: a continuous run is held here, at its point (the cursor stays)."""
+        if self.state != RUNNING:
+            raise Refused("not_running", f"no continuous run to pause (raster state: {self.state})")
+        self.state = LOCAL
+        return self.cursor
+
+    def resume(self) -> Tuple[int, XY]:
+        """The GUI's Continue: a raster held here runs by itself again from the cursor's point (it
+        is moved to and waited at again: its wait may have been cut short); none yet: point 0."""
+        if self.state != LOCAL:
+            raise Refused("not_held", f"Continue runs a raster held at the GUI (raster state: {self.state})")
+        self.state, self.parked = RUNNING, False
+        self.cursor = max(self.cursor, 0)
+        return self.cursor, self.path[self.cursor]
 
     def select(self, index: int) -> int:
         """Pick point `index` (clamped) of the armed path; nothing moves."""
@@ -106,7 +134,8 @@ class RasterSession:
         return self.selected
 
     def hand_to_blacs(self) -> bool:
-        """BLACS steps the raster from where it is. Returns True when this ended a continuous run."""
+        """BLACS steps the raster from where it is (next_index(BLACS) is its next point). Returns
+        True when this ended a continuous run."""
         if self.state == OFF:
             raise Refused("not_armed", "no raster armed to hand to BLACS")
         was_running = self.state == RUNNING
