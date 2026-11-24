@@ -108,8 +108,15 @@ class CameraView(QtWidgets.QWidget):
     # ---------------- items ----------------
     def _build_items(self) -> None:
         o = theme.OVERLAY
-        halo = pg.mkPen(QtGui.QColor(0, 0, 0, 170), width=4)
-        well = pg.mkPen(o["well"], width=1)
+        screen = QtGui.QGuiApplication.primaryScreen()
+        k = max(1.0, screen.devicePixelRatio()) if screen else 1.0
+
+        def pen(color, width, **kw):
+            # pyqtgraph pens are cosmetic (device px): scale so lines keep their weight at 150 %
+            return pg.mkPen(color, width=width * k, **kw)
+
+        halo = pen(QtGui.QColor(0, 0, 0, 170), 4)
+        well = pen(o["well"], 1)
 
         def add(item, z, cache=True):
             item.setZValue(z)
@@ -127,7 +134,7 @@ class CameraView(QtWidgets.QWidget):
         self._fault_rgb = (fault.red(), fault.green(), fault.blue())
 
         self._bounds = QtWidgets.QGraphicsRectItem()
-        self._bounds.setPen(pg.mkPen(o["path"], width=1.5, style=QtCore.Qt.DashLine))
+        self._bounds.setPen(pen(o["path"], 1.5, style=QtCore.Qt.DashLine))
         self._bounds.setBrush(QtGui.QBrush(QtCore.Qt.NoBrush))
         self._bounds.setVisible(False)
         add(self._bounds, 1)
@@ -135,37 +142,37 @@ class CameraView(QtWidgets.QWidget):
         path_c = QtGui.QColor(o["path"])
         line_c = QtGui.QColor(path_c)
         line_c.setAlpha(150)
-        self._dir_line = add(pg.PlotDataItem(pen=pg.mkPen(line_c, width=1)), 2)
-        self._corner_line = add(pg.PlotDataItem(pen=pg.mkPen(line_c, width=1.5, style=QtCore.Qt.DashLine)), 2)
+        self._dir_line = add(pg.PlotDataItem(pen=pen(line_c, 1)), 2)
+        self._corner_line = add(pg.PlotDataItem(pen=pen(line_c, 1.5, style=QtCore.Qt.DashLine)), 2)
 
-        self._pending_item = add(pg.ScatterPlotItem(size=8, symbol="o", pen=pg.mkPen(o["path"], width=1.6),
+        self._pending_item = add(pg.ScatterPlotItem(size=8, symbol="o", pen=pen(o["path"], 1.6),
                                                     brush=None), 3)
         self._armed_item = add(pg.ScatterPlotItem(size=7, symbol="o", pen=well, brush=pg.mkBrush(o["path"])), 4)
-        self._corner_item = add(pg.ScatterPlotItem(size=14, symbol="d", pen=pg.mkPen(o["well"], width=1.5),
+        self._corner_item = add(pg.ScatterPlotItem(size=14, symbol="d", pen=pen(o["well"], 1.5),
                                                    brush=pg.mkBrush(o["path"])), 5)
 
         trail_c = QtGui.QColor(o["spot"])
         trail_c.setAlpha(130)
         self._trail_item = add(pg.ScatterPlotItem(size=5, pen=None, brush=pg.mkBrush(trail_c)), 6)
         self._manual_halo = add(pg.ScatterPlotItem(size=13, symbol="x", pen=halo, brush=None), 7)
-        self._manual_item = add(pg.ScatterPlotItem(size=13, symbol="x", pen=pg.mkPen(o["ink"], width=2),
+        self._manual_item = add(pg.ScatterPlotItem(size=13, symbol="x", pen=pen(o["ink"], 2),
                                                    brush=None), 7.1)
-        self._cal_item = add(pg.ScatterPlotItem(size=18, symbol="o", pen=pg.mkPen(o["ink"], width=2),
+        self._cal_item = add(pg.ScatterPlotItem(size=18, symbol="o", pen=pen(o["ink"], 2),
                                                 brush=None), 8)
         self._cal_labels: list = []
 
         self._sel_halo = add(pg.ScatterPlotItem(size=22, symbol="o", pen=halo, brush=None), 9)
-        self._sel_item = add(pg.ScatterPlotItem(size=22, symbol="o", pen=pg.mkPen(o["ink"], width=2),
+        self._sel_item = add(pg.ScatterPlotItem(size=22, symbol="o", pen=pen(o["ink"], 2),
                                                 brush=None), 9.1)
         reticle = _reticle()
-        self._spot_halo = add(pg.ScatterPlotItem(size=40, symbol=reticle, pen=pg.mkPen(QtGui.QColor(0, 0, 0, 190), width=5),
+        self._spot_halo = add(pg.ScatterPlotItem(size=40, symbol=reticle, pen=pen(QtGui.QColor(0, 0, 0, 190), 5),
                                                  brush=None), 10)
-        self._spot_item = add(pg.ScatterPlotItem(size=40, symbol=reticle, pen=pg.mkPen(o["spot"], width=2.2),
+        self._spot_item = add(pg.ScatterPlotItem(size=40, symbol=reticle, pen=pen(o["spot"], 2.2),
                                                  brush=None), 10.1)
 
         hover_c = QtGui.QColor(o["ink"])
         hover_c.setAlpha(70)
-        hp = pg.mkPen(hover_c, width=1, style=QtCore.Qt.DashLine)
+        hp = pen(hover_c, 1, style=QtCore.Qt.DashLine)
         self._hover_v = pg.InfiniteLine(angle=90, movable=False, pen=hp)
         self._hover_h = pg.InfiniteLine(angle=0, movable=False, pen=hp)
         for ln in (self._hover_v, self._hover_h):

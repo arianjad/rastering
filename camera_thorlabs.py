@@ -418,12 +418,16 @@ class ThorCameraThread(QtCore.QThread):
         except Exception as e:
             self.error.emit(f"Camera info not read: {e}")
 
-        dt_min = 1.0 / max(float(self.cfg.max_fps), 0.1)
-        t_last = 0.0
-        n, t_window = 0, time.perf_counter()
+        dt_min = 1.0 / max(float(self.cfg.max_fps), 0.1)    # soft frame-rate limit
+        next_grab = 0.0
+        n, t_window = 0, None            # frame intervals counted since the window's first frame
         try:
             while self._running and not self.isInterruptionRequested():
                 self._apply_pending()
+                wait = next_grab - time.perf_counter()
+                if wait > 0:
+                    time.sleep(wait)
+                next_grab = time.perf_counter() + dt_min
                 try:
                     frame = self._cam.grab()
                 except Exception as e:
@@ -432,14 +436,14 @@ class ThorCameraThread(QtCore.QThread):
                     continue
                 self._slot.put(frame)
 
-                n += 1
                 now = time.perf_counter()
-                if now - t_window >= 1.0:
-                    self.fps.emit(n / (now - t_window))
-                    n, t_window = 0, now
-                if t_last and now - t_last < dt_min:
-                    time.sleep(dt_min - (now - t_last))
-                t_last = time.perf_counter()
+                if t_window is None:
+                    t_window = now
+                else:
+                    n += 1
+                    if now - t_window >= 1.0:
+                        self.fps.emit(n / (now - t_window))
+                        n, t_window = 0, now
         finally:
             try:
                 self._cam.close()
