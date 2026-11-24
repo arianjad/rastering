@@ -29,11 +29,13 @@ LAST_CALIBRATION_POINTER = os.path.join(HERE, "last_calibration_state.json")
 # [mm]: with less, the fit has no information on that axis (a stage moved in x only gave
 # "scale 1.9e-09 mm/px").
 MIN_STAGE_SPAN_MM = 0.010
-# A calibration matrix is refused above this condition number (largest / smallest singular
-# value). Camera pixels are square and the stage axes square to each other, so a real fit is
-# near 1 (the lab's is 1.4; a camera viewing the target at 80 deg would give 6); far above
-# means the stage positions lay (almost) on one line.
+# A fresh fit is refused above this condition number (largest / smallest singular value); a
+# calibration file above it loads with a warning. Camera pixels are square and the stage axes
+# square to each other, so a real fit is near 1 (the lab's is 1.4; a camera viewing the target at
+# 80 deg would give 6); far above means the stage positions lay (almost) on one line.
 MAX_MATRIX_COND = 10.0
+# Above this (or not finite) the matrix has no inverse worth the name: never usable.
+SINGULAR_COND = 1e12
 
 
 class UnusableMatrix(ValueError):
@@ -46,20 +48,25 @@ class UnusableMatrix(ValueError):
 
 
 class AffineCalibration:
-    """motor [mm] = M @ image [px] + b. Read-only once made."""
+    """motor [mm] = M @ image [px] + b. Read-only once made. Refused (UnusableMatrix) when M is not
+    finite, singular, or its condition number `cond` is above max_cond (None: no such limit)."""
 
-    def __init__(self, M, b):
+    def __init__(self, M, b, max_cond: Optional[float] = MAX_MATRIX_COND):
         self.M = np.array(M, dtype=float).reshape(2, 2)
         self.b = np.array(b, dtype=float).reshape(2)
-        finite = bool(np.all(np.isfinite(self.M)))
-        cond = float(np.linalg.cond(self.M)) if finite else float("inf")
-        if not cond <= MAX_MATRIX_COND:
+        finite = bool(np.all(np.isfinite(self.M)) and np.all(np.isfinite(self.b)))
+        with np.errstate(divide="ignore"):
+            cond = float(np.linalg.cond(self.M)) if finite else float("inf")
+        self.cond = cond
+        limit = SINGULAR_COND if max_cond is None else min(float(max_cond), SINGULAR_COND)
+        if not cond <= limit:
             raise UnusableMatrix(
                 f"the stage positions at the clicks lie (almost) on one line (matrix condition {cond:.3g}, more "
                 f"than {MAX_MATRIX_COND:g}): move the stage in both x and y between clicks, so the spots form "
                 "a triangle",
-                f"its condition number is {cond:.3g}, more than {MAX_MATRIX_COND:g}: it maps the image onto "
-                "(almost) a line" if finite else "it holds a value that is not a number")
+                "it holds a value that is not a number" if not finite else
+                "it maps the image onto a line (singular)" if not cond <= SINGULAR_COND else
+                f"its condition number is {cond:.3g}, more than {limit:g}: it maps the image onto (almost) a line")
         self._Minv = np.linalg.inv(self.M)
         for a in (self.M, self.b, self._Minv):
             a.setflags(write=False)
@@ -124,7 +131,8 @@ class CalibrationFile:
 
 def read_calibration_file(path: str) -> CalibrationFile:
     """Read a calibration file (or follow last_calibration_state.json to the one it names).
-    Raises OSError or ValueError with the file name in the words."""
+    Raises OSError or ValueError with the file name in the words. A matrix above MAX_MATRIX_COND is
+    read (affine.cond says so); a singular or non-finite one is not."""
     with open(path, "r") as f:
         data = json.load(f)
     target = data.get("last_calibration_path") if isinstance(data, dict) else None
@@ -137,8 +145,8 @@ def read_calibration_file(path: str) -> CalibrationFile:
     uh = data.get("user_home")
     bl = data.get("backlash") if isinstance(data.get("backlash"), dict) else {}
     cs = data.get("camera_settings")
-    try:
-        affine = AffineCalibration(data["calibration_matrix"], data["calibration_offset"])
+    try:      # a file is used even above MAX_MATRIX_COND (the controller warns); never when singular
+        affine = AffineCalibration(data["calibration_matrix"], data["calibration_offset"], max_cond=None)
     except UnusableMatrix as e:
         raise ValueError(f"the calibration matrix in {path} cannot be used: {e.file_words}") from None
     return CalibrationFile(

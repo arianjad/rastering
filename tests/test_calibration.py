@@ -101,19 +101,51 @@ def test_clicks_on_one_line_are_refused_and_change_nothing(tmp_path):
         g.close()
 
 
-def test_the_calibration_cannot_change_under_an_armed_raster(tmp_path):
-    """Harm stopped: loading or clearing a calibration while a raster is armed moves every
-    remaining path point (the path is in pixels) to other spots on the target. Both are refused
-    while armed; the calibration in use stays."""
+def test_a_calibration_change_under_an_armed_raster_is_done_and_says_where_the_path_goes(tmp_path):
+    """Harm named: the armed path is in pixels, so a new calibration moves every remaining point to
+    other motor positions; that is the operator's call (a recalibration mid-run is normal) but
+    must not pass unseen. Loading a file, a fresh fit and clearing are done while a raster is
+    armed, each with one plain line; the raster stays armed and its next point uses the new
+    calibration (cleared: its next point cannot be reached, and says so)."""
     g = Rig(tmp_path)
     try:
         g.plan()
-        g.ctl.arm()
-        before = g.ctl.calibration
+        assert g.ctl.arm().ok
         other = write_calibration(tmp_path / "other.json", mm_per_px=0.02)
-        assert g.ctl.load_calibration(other).code == "raster_active"
-        assert g.ctl.clear_calibration().code == "raster_active"
-        assert g.ctl.calibration is before
+        assert g.ctl.load_calibration(other).ok
+        assert g.warnings()[-1] == "A raster is armed: its path [px] now maps to the new calibration."
+        assert g.ctl.raster_snapshot().state == "local"
+        assert g.ctl.step().ok
+        g.idle()
+        assert g.moves("X")[-1] == pytest.approx(2.0)                 # point 0, 100 px x 0.02 mm/px
+        _click_three_spots(g, [((1.0, 1.0), (100.0, 100.0)), ((3.0, 1.0), (300.0, 100.0)),
+                               ((1.0, 2.0), (100.0, 200.0))])
+        wait_until(lambda: any(t.startswith("Calibration fitted") for _, t in g.messages))
+        assert g.warnings()[-1] == "A raster is armed: its path [px] now maps to the new calibration."
+        assert g.ctl.clear_calibration().ok and g.ctl.calibration is None
+        assert g.warnings()[-1] == ("A raster is armed and has no calibration now: its points cannot be moved to "
+                                    "until one is loaded or fitted.")
+        assert g.ctl.raster_snapshot().state == "local"
+    finally:
+        g.close()
+
+
+def test_a_calibration_file_below_the_quality_limit_loads_with_a_warning(tmp_path):
+    """Harm stopped: a calibration file whose matrix is far from square (condition above 10: maybe
+    a camera at a steep angle, maybe a bad fit) was refused outright, so the operator could not
+    use the only calibration they had. It loads, with one plain line saying what is odd about it;
+    a matrix that holds no usable numbers (not finite, or singular) still cannot be used."""
+    g = Rig(tmp_path, calibrated=False)
+    try:
+        steep = write_calibration(tmp_path / "steep.json", calibration_matrix=[[0.01, 0.0], [0.0, 0.0005]])
+        assert g.ctl.load_calibration(steep).ok
+        assert g.ctl.calibration.px_to_mm(100.0, 100.0) == pytest.approx((1.0, 0.05))
+        assert len(g.warnings()) == 1 and "its matrix condition is 20, more than 10" in g.warnings()[0]
+        for bad in ([[0.01, 0.0], [0.0, 0.0]], [[float("nan"), 0.0], [0.0, 0.01]]):
+            path = write_calibration(tmp_path / "bad.json", calibration_matrix=bad)
+            res = g.ctl.load_calibration(path)
+            assert not res.ok and "cannot be used" in res.words
+        assert g.ctl.calibration.px_to_mm(100.0, 100.0) == pytest.approx((1.0, 0.05))
     finally:
         g.close()
 

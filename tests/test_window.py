@@ -151,6 +151,27 @@ def test_buttons_offer_only_what_the_raster_state_allows(make):
     assert win.run.start_btn.toolTip() == "Calibrate first (Setup)."
 
 
+def test_calibration_buttons_stay_live_during_a_raster_and_arm_while_collecting_clicks(make):
+    """Harm stopped: Calibrate, Load, Use last and Clear were greyed while a raster was armed, and
+    Start / Arm for BLACS while calibration clicks were being collected, though the GUI can do
+    both (a calibration change says where the armed path goes now); the operator had to stop a
+    raster to recalibrate. They stay live. The camera region and display stay locked while
+    clicks are collected: clicks in two pixel frames would make a fit that aims nowhere."""
+    rig, win = make()
+    win.run.start_btn.click()
+    pump_until(lambda: win.bar.status()["state"] == "local")
+    st = win.setup
+    assert all(b.isEnabled() for b in (st.calibrate_btn, st.load_btn, st.use_last_btn, st.clear_btn))
+    win.run.stop_btn.click()
+    pump_until(lambda: win.bar.status()["state"] == "off")
+    st.calibrate_btn.click()
+    pump_until(lambda: win.bar.status()["calibration"] == "collecting")
+    assert win.run.start_btn.isEnabled() and win.run.arm_blacs_btn.isEnabled()
+    assert all(b.isEnabled() for b in (st.load_btn, st.use_last_btn, st.clear_btn))
+    assert not win.camera_panel.load_btn.isEnabled()
+    assert win.camera_panel.load_btn.toolTip() == "Finish or cancel the calibration first."
+
+
 def test_a_plain_warning_is_not_red_and_a_red_warning_is(make):
     """Harm stopped: every warning shown in the fault colour (red lines that are not faults teach
     the operator to ignore the real ones), or a warning that does need attention (a move outside

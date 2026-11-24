@@ -53,11 +53,11 @@ the reason.
 ## Setup tab → Setup step
 | Old | Now |
 |---|---|
-| Reset | Kept: "Clear"; greyed while a raster is active |
+| Reset | Kept: "Clear"; during a raster it is done, with a line saying the armed path has no calibration now |
 | Calibrate (Affine) | Kept: "Calibrate"; "Cancel calibration" (also Esc) while collecting; "spot 2 of 3" guidance |
 | Revert to Last | Kept: "Use last" |
 | Save Calibration As… | Kept: "Save as…". Dropped: the notes dialog (fits note their spots; the file name says the rest) |
-| Load Calibration… | Kept: "Load…" |
+| Load Calibration… | Kept: "Load…". A file whose matrix condition is above 10 loads with a warning (a fresh fit that far off is refused); a singular or non-finite matrix cannot be used |
 | Apply camera settings from cal | Kept: "Use the calibration's camera settings", shown when the calibration is stale |
 | Matrix spin boxes M11..M22, bX, bY | Changed: read-only M [mm/px], b [mm] and scale |
 | Device Home X, Y, Both | Kept; during a raster it is done, with a red line (the stage sweeps to 0 mm under the laser) |
@@ -153,7 +153,7 @@ the reason.
 3. Saved bounds overwritten by the first frame; spiral centre never saved: fixed.
 4. Bounds tooltip claimed the hull used them; Enforce tooltip: fixed (bounds hidden for the hull; Enforce removed).
 5. Units: one unit per quantity (stage mm, image px); jog step is mm along the screen direction.
-6. "Reset" cleared the calibration under a running raster: now "Clear", greyed while a raster is active.
+6. "Reset" cleared the calibration under a running raster without a word: now "Clear"; a calibration change (Clear, Load, Use last, a fit) during a raster is done and says where the armed path goes now.
 7. "Save and Clear": removed.
 8. Stop enabled with nothing running: fixed. **Open:** Stop drops the queued points but lets a move already under way finish. Kinesis has `StopImmediate` (the KCube code calls it when a move times out), so Stop could also halt the move in flight.
 9. Calibrate had no Cancel and fed later clicks to the calibration: fixed (Cancel, Esc; clicks go to the calibration only while collecting).

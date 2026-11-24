@@ -59,13 +59,13 @@ def gates(state: str, *, calibrated: bool, calibrating: bool, busy: bool, patter
         return True, ""
 
     idle, quiet = (off, ACTIVE), (not calibrating, CALIBRATING)
-    runnable = need(idle, quiet, (calibrated, NEED_CAL), (pattern_ok, NEED_PATTERN))
+    runnable = need(idle, (calibrated, NEED_CAL), (pattern_ok, NEED_PATTERN))
     return {
-        "calibrate": need(idle),
+        "calibrate": need(),            # a raster armed: done, with a warning (raster_controller._apply)
         "cancel_calibration": need((calibrating, "")),
-        "load_calibration": need(idle, quiet),
-        "use_last": need(idle, quiet),
-        "clear_calibration": need(idle, quiet),
+        "load_calibration": need(),
+        "use_last": need(),
+        "clear_calibration": need(),
         "save_calibration": need((calibrated, "No calibration to save.")),
         "restore_camera": need(idle, quiet),
         "camera_geometry": need((off, "A raster is active: its path is in camera px, so the region and "

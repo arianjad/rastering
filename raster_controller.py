@@ -23,9 +23,9 @@ from PyQt5.QtCore import QObject, pyqtSignal
 
 import blacs_link
 
-from calibration import (LAST_CALIBRATION_POINTER, AffineCalibration, CalibrationFile, fit_affine,
-                         read_calibration_file, remember_calibration_path, remembered_calibration_path,
-                         write_calibration_file)
+from calibration import (LAST_CALIBRATION_POINTER, MAX_MATRIX_COND, AffineCalibration, CalibrationFile,
+                         fit_affine, read_calibration_file, remember_calibration_path,
+                         remembered_calibration_path, write_calibration_file)
 from config import APP_CONFIG, SETTINGS_DEFAULTS_FILE, SIM_FOLDER, AppConfig, HardwareConfig
 from raster_paths import points_from_spec
 from raster_session import (ARMED, BLACS, GUI, LOCAL, OFF, RUN, RUNNING, RasterPlan, RasterSession, RasterSnapshot,
@@ -448,11 +448,13 @@ class SystemController(QObject):
             cal = read_calibration_file(path)
         except (OSError, ValueError) as e:
             return self._refused(Refused("bad_calibration_file", f"could not load {path}: {e}"))
-        res = self._apply(cal)
-        if res.ok:
-            extra = ", with camera settings" if cal.camera_settings is not None else ""
-            self.message.emit("info", f"Loaded calibration from {cal.path}{extra}.")
-        return res
+        extra = ", with camera settings" if cal.camera_settings is not None else ""
+        self.message.emit("info", f"Loaded calibration from {cal.path}{extra}.")
+        if cal.affine.cond > MAX_MATRIX_COND:
+            self.message.emit("warning", f"{os.path.basename(cal.path)}: its matrix condition is {cal.affine.cond:.3g}, "
+                                         f"more than {MAX_MATRIX_COND:g} (a fit that far off is refused): it maps "
+                                         "the image onto almost a line, so px moves may land far from the spot.")
+        return self._apply(cal)
 
     def save_calibration(self, path: str, *, camera_settings: Optional[Dict[str, Any]] = None,
                          notes: Optional[str] = None) -> Result:
@@ -655,26 +657,25 @@ class SystemController(QObject):
 
     def _apply(self, cal: Optional[CalibrationFile], *, save_to: Optional[str] = None) -> Result:
         """Use `cal` (None: no calibration): the stage's px -> mm, and the user home and backlash it
-        carries. Refused while a raster is armed: its path is in px. Emits calibration_changed."""
+        carries. With a raster armed it is done too, with a warning: the path is in px, so its
+        points now map to other motor positions. Emits calibration_changed."""
         with self._lock:
-            if self._session.state != OFF:
-                refusal = Refused("raster_active", "calibration not changed: stop the raster first "
-                                                   "(its path is in camera pixels)")
-            else:
-                refusal = None
-                if save_to is not None and cal is not None:
-                    try:
-                        cal = write_calibration_file(save_to, cal)
-                    except _SAVE_ERRORS as e:
-                        self.message.emit("error", f"Calibration in use but not saved to {save_to} (the file "
-                                                   f"there is unchanged): {e}. Save it with Save calibration.")
-                self._cal_file = cal
-                self._stage.set_calibration(cal.affine if cal is not None else None)
-                if cal is not None and cal.user_home_mm is not None:
-                    self._user_home = cal.user_home_mm
-                uh = self._user_home
-        if refusal is not None:
-            return self._refused(refusal)
+            armed = self._session.state != OFF
+            if save_to is not None and cal is not None:
+                try:
+                    cal = write_calibration_file(save_to, cal)
+                except _SAVE_ERRORS as e:
+                    self.message.emit("error", f"Calibration in use but not saved to {save_to} (the file "
+                                               f"there is unchanged): {e}. Save it with Save calibration.")
+            self._cal_file = cal
+            self._stage.set_calibration(cal.affine if cal is not None else None)
+            if cal is not None and cal.user_home_mm is not None:
+                self._user_home = cal.user_home_mm
+            uh = self._user_home
+        if armed:
+            self.message.emit("warning", "A raster is armed: its path [px] now maps to the new calibration."
+                              if cal is not None else "A raster is armed and has no calibration now: its points "
+                              "cannot be moved to until one is loaded or fitted.")
         if cal is not None:
             if cal.path:
                 self._remember(cal.path)
