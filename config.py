@@ -121,6 +121,7 @@ def load_settings_defaults(path: str = SETTINGS_DEFAULTS_FILE) -> Optional[Dict[
 
 
 def save_settings_defaults(data: Dict[str, Any], path: str = SETTINGS_DEFAULTS_FILE) -> None:
-    """Save the pattern and display settings. Raises OSError."""
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
+    """Save the pattern and display settings, whole or not at all (the old file stays on a
+    failure). Raises OSError, or TypeError / ValueError for a value JSON cannot hold."""
+    from calibration import write_json_whole
+    write_json_whole(path, data)

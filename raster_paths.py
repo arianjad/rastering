@@ -60,6 +60,11 @@ class RasterSpec:
 def points_from_spec(spec: RasterSpec) -> List[XY]:
     """The pattern's points in visiting order [px]. Raises ValueError (plain words) when the
     pattern cannot be built, has no points, or has more than MAX_PATH_POINTS."""
+    if spec.bounds is not None:
+        xmin, xmax, ymin, ymax = spec.bounds
+        for axis, lo, hi in (("x", xmin, xmax), ("y", ymin, ymax)):
+            if lo > hi:
+                raise ValueError(f"{axis} from is larger than {axis} to in the scan bounds: swap them")
     if spec.kind in ("square_x", "square_y"):
         pts = _square(spec)
         hint = "check the step sizes against the scan bounds"
@@ -181,8 +186,8 @@ def _hull(hull: Sequence[XY], xstep: float, ystep: float) -> List[XY]:
     corners = np.asarray(hull, dtype=float)
     try:
         tri = Delaunay(corners)
-    except Exception as e:   # scipy QhullError: collinear or repeated corners
-        raise ValueError(f"degenerate convex hull (collinear or duplicate points): {e}") from None
+    except Exception:   # scipy QhullError (its text is for programmers): the corners span no area
+        raise ValueError("the corners lie on one line: click at least 3 corners that enclose an area") from None
     xs = _grid(corners[:, 0].min(), corners[:, 0].max(), xstep, snap_stop=False)
     ys = _grid(corners[:, 1].min(), corners[:, 1].max(), ystep, snap_stop=False)
     if xs.size * ys.size > _MAX_HULL_CELLS:

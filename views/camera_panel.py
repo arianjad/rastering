@@ -257,8 +257,10 @@ class CameraPanel(QtWidgets.QWidget):
         """Lock the region, display and Load/Revert (a calibration depends on them),
         e.g. while a raster is active; reason shows as the tooltip."""
         for w in (self._roi_group, self._disp_group, self.load_btn, self.revert_btn):
+            if w.property("tip") is None:          # the tooltip to give back when unlocked
+                w.setProperty("tip", w.toolTip())
             w.setEnabled(bool(on) and (w is not self.revert_btn or bool(self._file_path)))
-            w.setToolTip("" if on else reason)
+            w.setToolTip(w.property("tip") if on else reason)
 
     # ---------------- panel -> program ----------------
     def display_geometry(self) -> DisplayGeometry:

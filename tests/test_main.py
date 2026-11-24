@@ -78,3 +78,19 @@ def test_an_error_in_a_button_handler_is_logged_and_the_gui_goes_on(tmp_path, mo
     finally:
         win.close()
         ctl.close()
+
+
+def test_a_failed_save_of_the_defaults_leaves_the_old_file_whole(tmp_path):
+    """Harm stopped: Save settings as defaults wrote the file in place; a failure half way (a value
+    JSON cannot hold, a full disk) left it cut short, so the next start lost every saved setting.
+    The file is written whole or not at all: the old one stays."""
+    path = str(tmp_path / "settings_defaults.json")
+    config.save_settings_defaults({"jog": {"step_mm": 0.5}}, path)
+    with open(path) as f:
+        before = f.read()
+    try:
+        config.save_settings_defaults({"jog": {"step_mm": 0.25}, "bad": object()}, path)
+    except (TypeError, ValueError, OSError):
+        pass
+    with open(path) as f:
+        assert f.read() == before

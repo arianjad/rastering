@@ -155,7 +155,7 @@ the reason.
 5. Units: one unit per quantity (stage mm, image px); jog step is mm along the screen direction.
 6. "Reset" cleared the calibration under a running raster: now "Clear", greyed while a raster is active.
 7. "Save and Clear": removed.
-8. Stop enabled with nothing running: fixed. **Open:** Stop does not abort a move already under way (the stage has no abort call); it drops the queued points.
+8. Stop enabled with nothing running: fixed. **Open:** Stop drops the queued points but lets a move already under way finish. Kinesis has `StopImmediate` (the KCube code calls it when a move times out), so Stop could also halt the move in flight.
 9. Calibrate had no Cancel and fed later clicks to the calibration: fixed (Cancel, Esc; clicks go to the calibration only while collecting).
 10. Re-arm never gated: shown only when the pattern was edited since arming.
 11. Duplicate controls (Continuous vs three-face button vs Move to selected): one action per button; the state block shows who moves the stage.

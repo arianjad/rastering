@@ -82,7 +82,7 @@ def test_spiral_visits_each_spot_once_and_stays_in_the_scan_bounds():
     (RasterSpec(kind="hull", hull_points=[(0, 0), (10, 0)], xstep=1, ystep=1),
      "a convex hull needs at least 3 points"),
     (RasterSpec(kind="hull", hull_points=[(0, 0), (1, 1), (2, 2)], xstep=1, ystep=1),
-     "degenerate convex hull"),
+     "the corners lie on one line"),
     (RasterSpec(kind="hull", hull_points=[(10, 10), (490, 20), (250, 480)], xstep=0.01, ystep=0.01),
      "hull grid too fine"),
     (RasterSpec(kind="square_x", bounds=(0, 1000, 0, 1000), xstep=1, ystep=1),
@@ -127,3 +127,16 @@ def test_nearest_point_ties_go_to_the_lowest_index():
     assert nearest_index(path, 9.0, 1.0) == 1
     assert nearest_index(path, 1.0, 0.0) == 0
     assert nearest_index([], 1.0, 1.0) == -1
+
+
+def test_a_pattern_that_cannot_be_built_says_why_in_the_operators_words():
+    """Harm stopped: swapped scan bounds ("x from" larger than "x to") said "check the step sizes",
+    so the operator changed the steps; and three corners on one line showed raw Qhull text
+    ("QH6154 Qhull precision error ..."). Each says what is wrong, in plain words."""
+    with pytest.raises(ValueError) as e:
+        points_from_spec(RasterSpec(kind="square_x", bounds=(700.0, 300.0, 400.0, 900.0), xstep=40, ystep=40))
+    assert "x from is larger than x to" in str(e.value)
+    with pytest.raises(ValueError) as e:
+        points_from_spec(RasterSpec(kind="hull", xstep=10, ystep=10,
+                                    hull_points=((0.0, 0.0), (10.0, 10.0), (20.0, 20.0))))
+    assert "one line" in str(e.value) and "Q" not in str(e.value)

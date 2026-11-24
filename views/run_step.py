@@ -157,6 +157,14 @@ class RunStep(QtWidgets.QWidget):
         self.point_of.setText(f"of {path_len}" if path_len else "of —")
         self.shots.setText(f"{shots}  (set by BLACS)")
 
+    def point_typed(self) -> bool:
+        """The Point box shows a point number, entered or only typed (typed numbers count)."""
+        box = self.point_box
+        try:
+            return 0 <= int(box.cleanText()) <= box.maximum()
+        except ValueError:
+            return False
+
     def show_record_file(self, path: str) -> None:
         self.record_file.setText(path)
         self.record_file.setVisible(bool(path))

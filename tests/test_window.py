@@ -285,6 +285,32 @@ def test_a_point_number_being_typed_survives_a_blacs_shot(make):
     assert win.run.point_box.text() == "2"
 
 
+def test_go_to_selected_point_takes_a_number_typed_without_enter(make):
+    """Harm stopped: the operator typed 2 into Point and reached for Go to selected point, which
+    stayed greyed until Enter (everywhere else in the window a typed number counts), so they
+    pressed something else or thought going to a point was not allowed now. The typed number
+    enables the button, and the click goes there."""
+    rig, win = make()
+    win.run.start_btn.click()                                   # arm here
+    pump_until(lambda: win.bar.status()["state"] == "local")
+    type_into(win.run.point_box, "2")
+    assert win.run.goto_btn.isEnabled()
+    win.run.goto_btn.click()
+    rig.idle()
+    assert rig.moves()[-2:] == [pytest.approx(1.2), pytest.approx(2.0)]
+
+
+def test_a_click_on_the_pattern_step_that_sets_nothing_says_why(make):
+    """Harm stopped: with a square pattern, a click on the image in the Pattern step did nothing
+    and said nothing; the operator clicked again and again, or concluded the window had hung. The
+    log line says the square pattern takes its box from the numbers."""
+    rig, win = make()
+    win._show_step(PATTERN)
+    n = len(win.log.lines())
+    win._on_click(300.0, 400.0, 0)
+    assert len(win.log.lines()) == n + 1 and "Scan bounds" in win.log.lines()[-1]
+
+
 def test_a_click_on_the_run_step_with_nothing_armed_sets_the_go_to_target(make):
     """Harm stopped: on the Run step with nothing armed, a click on the image (meant as "go
     there", as on Setup) gave a red refusal; red lines that are not faults teach the operator to

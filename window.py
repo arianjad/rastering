@@ -325,6 +325,7 @@ class RasterWindow(QtWidgets.QMainWindow):
         r.goto_btn.clicked.connect(self._go_to_point)
         r.point_box.valueChanged.connect(lambda n: c.select_point(n) if n >= 0 else None)
         r.point_box.editingFinished.connect(self._refresh)    # not redrawn while typed in: catch up on leaving
+        r.point_box.lineEdit().textEdited.connect(lambda *_: self._apply_gates())   # a typed number counts
         r.record.toggled.connect(self._record_history)
         r.trail.valueChanged.connect(lambda *_: self._draw_trail())
 
@@ -386,7 +387,7 @@ class RasterWindow(QtWidgets.QMainWindow):
         s = self._snap
         g = gates(s.state, calibrated=self.ctl.calibration is not None,
                   calibrating=self._cal_progress != (0, 0), busy=self._busy, pattern_ok=bool(self._points),
-                  edited=s.path_edited, selected=s.selected_index >= 0,
+                  edited=s.path_edited, selected=s.selected_index >= 0 or self.run.point_typed(),
                   user_home=None not in self.ctl.user_home_mm)
         st, r = self.setup, self.run
         for key, widgets in (("calibrate", (st.calibrate_btn,)), ("cancel_calibration", (st.cancel_btn,)),
@@ -766,6 +767,9 @@ class RasterWindow(QtWidgets.QMainWindow):
                 self.pattern.add_corner(x, y)
             elif kind == "spiral":
                 self.pattern.set_centre(x, y)
+            else:
+                self.log.add("A click on the image sets nothing for a square pattern: its box is the "
+                             "numbers under Scan bounds.")
             return
         cal = self.ctl.calibration
         if cal is None:
@@ -815,7 +819,7 @@ class RasterWindow(QtWidgets.QMainWindow):
     def _save_defaults(self) -> None:
         try:
             save_settings_defaults(self.settings(), self._defaults_path)
-        except OSError as e:
+        except (OSError, TypeError, ValueError) as e:
             self.log.add(f"Defaults not saved: {e}", error=True)
             return
         self.log.add(f"Pattern, run options and jog step saved as defaults ({os.path.basename(self._defaults_path)}).")

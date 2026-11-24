@@ -59,3 +59,16 @@ def test_region_is_sent_only_on_apply_with_absolute_sensor_start():
     p.apply_roi_btn.click()
     assert sent == [("roi_requested", (640, 480, 400, 300))]
     assert p.camera_config().width == 640 and p.camera_config().start_x == 400
+
+
+def test_camera_load_and_revert_keep_their_tooltips_after_a_raster():
+    """Harm stopped: after the first raster the camera Load and Revert buttons had blank tooltips
+    for the rest of the session, so the operator could not tell what Revert would go back to.
+    Locked, they say why; unlocked again, they say what they do."""
+    p, _ = _panel()
+    p.set_settings_file("camera_params.ini")
+    tips = (p.load_btn.toolTip(), p.revert_btn.toolTip())
+    p.set_geometry_enabled(False, "A raster is active.")
+    assert p.load_btn.toolTip() == "A raster is active."
+    p.set_geometry_enabled(True)
+    assert (p.load_btn.toolTip(), p.revert_btn.toolTip()) == tips and all(tips)
