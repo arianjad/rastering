@@ -181,7 +181,7 @@ class CameraView(QtWidgets.QWidget):
             self._pi.addItem(ln, ignoreBounds=True)
 
     def _restyle(self) -> None:
-        t = theme.tokens()
+        t = theme.DARK            # dark surround in both themes: a light one glares around the image
         self._plot.setBackground(t["well"])
         tick_font = theme.font("small")
         for name in ("left", "bottom"):

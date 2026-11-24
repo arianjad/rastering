@@ -118,6 +118,13 @@ class SystemController(QObject):
         with self._lock:
             return self._user_home
 
+    @property
+    def calibration_clicks(self) -> Tuple[int, int]:
+        """(spots recorded, spots needed) while calibrating; (0, 0) when not."""
+        with self._lock:
+            c = self._clicks
+            return (len(c.px), c.required) if c is not None else (0, 0)
+
     def reachable(self, points_px: Sequence[XY]) -> List[bool]:
         """For each image point [px]: can the stage go there (calibrated and inside the travel)?"""
         return self._stage.reachable(points_px)
@@ -329,6 +336,14 @@ class SystemController(QObject):
         self.message.emit("info", f"Calibration: jog the beam to {required_points} distinct spots; "
                                   "click the laser spot on the image each time.")
         return Result(True)
+
+    def cancel_calibration(self) -> None:
+        """Stop collecting calibration clicks; the calibration in use stays."""
+        with self._lock:
+            was, self._clicks = self._clicks, None
+        if was is not None:
+            self.calibration_progress.emit(0, 0)
+            self.message.emit("info", "Calibration cancelled; the calibration in use is unchanged.")
 
     def add_calibration_click(self, x: float, y: float) -> Result:
         with self._lock:

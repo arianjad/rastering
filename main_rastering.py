@@ -1,7 +1,7 @@
 """Start the rastering GUI.
 
-    py -3.13 main_rastering.py                       real camera, real motors, BLACS link on
-    py -3.13 main_rastering.py --simulate --no-blacs  no hardware, no network port
+    py -3.13 main_rastering.py                        real camera, real motors, BLACS link on
+    py -3.13 main_rastering.py --simulate --no-blacs   no hardware, no network port
 
 --simulate: fake motors and a fake camera (camera_sim.py); the camera SDK and
 Kinesis are never loaded. Same as RASTER_SIMULATE=1.
@@ -14,6 +14,7 @@ import argparse
 import dataclasses
 import os
 import sys
+from typing import Tuple
 
 from PyQt5 import QtGui, QtWidgets
 
@@ -24,10 +25,8 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 
 def parse_args(argv=None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Rastering GUI")
-    p.add_argument("--simulate", action="store_true",
-                   help="fake motors and fake camera (no hardware)")
-    p.add_argument("--no-blacs", action="store_true",
-                   help="do not serve the BLACS menu link")
+    p.add_argument("--simulate", action="store_true", help="fake motors and fake camera (no hardware)")
+    p.add_argument("--no-blacs", action="store_true", help="do not serve the BLACS menu link")
     return p.parse_args(argv)
 
 
@@ -38,40 +37,65 @@ def app_config(args: argparse.Namespace) -> config.AppConfig:
     return dataclasses.replace(
         cfg,
         hardware=dataclasses.replace(cfg.hardware, simulate=simulate),
-        network=dataclasses.replace(cfg.network,
-                                    blacs_link=cfg.network.blacs_link and not args.no_blacs),
+        network=dataclasses.replace(cfg.network, blacs_link=cfg.network.blacs_link and not args.no_blacs),
     )
+
+
+def camera_setup(cfg: config.AppConfig) -> Tuple[object, object, str, str]:
+    """(ThorCamConfig, DisplayGeometry, settings file used or "", words for the log) from the
+    camera settings file; config.py's values when it does not load."""
+    from camera_thorlabs import DisplayGeometry, ThorCamConfig, read_camera_ini
+    c = cfg.camera
+    base = ThorCamConfig.from_app(c)
+    geom = DisplayGeometry(rotation_k=c.rotation_k, flip_x=c.flip_x, flip_y=c.flip_y)
+    path = c.camera_params_ini
+    if not path:
+        return base, geom, "", "No camera settings file configured: config.py values."
+    path = path if os.path.isabs(path) else os.path.join(HERE, path)
+    try:
+        cam_cfg, geom = read_camera_ini(path, base, geom)
+    except Exception as e:      # a bad file must not stop the GUI: config.py values instead
+        return base, geom, "", f"Camera settings file not loaded ({e}): config.py values."
+    return cam_cfg, geom, path, f"Camera settings loaded from {path}."
 
 
 def main(argv=None) -> int:
     args = parse_args(argv)
     cfg = app_config(args)
 
+    import theme
+    theme.setup_high_dpi()
     app = QtWidgets.QApplication(sys.argv[:1])
-    from theme import apply_theme, load_light_pref
-    apply_theme(app, light=load_light_pref())
+    theme.apply_theme(app, light=theme.load_light_pref())
     app.setWindowIcon(QtGui.QIcon(os.path.join(HERE, "rastering.ico")))
 
-    from raster_controller import create_controller_from_config, load_last_calibration_path
-    controller = create_controller_from_config(cfg)
+    from calibration import last_calibration_path
+    from camera_thorlabs import ThorCameraThread
+    from raster_controller import create_controller
+    from window import RasterWindow
 
-    from ui import RasterMainWindow
-    win = RasterMainWindow(controller, ui_path=os.path.join(HERE, "raster_gui.ui"),
-                           simulate_camera=cfg.hardware.simulate)
+    controller = create_controller(cfg)
+    cam_cfg, geom, cam_file, cam_words = camera_setup(cfg)
+    camera_class = None
+    if cfg.hardware.simulate:
+        from camera_sim import SimCamera
+        camera_class = SimCamera
+    camera = ThorCameraThread(cam_cfg, camera_class=camera_class)
 
-    # Load the last-used calibration, if any (first launch: none; calibrate first).
-    try:
-        last_path = load_last_calibration_path()
-        if last_path:
-            data = controller.load_calibration_from_path(last_path)
-            win.note_loaded_cal_bundle(data, source_path=last_path)
-    except Exception as e:
-        print(f"[startup] Could not auto-load last calibration: {e}")
-
+    win = RasterWindow(controller, camera, camera_config=cam_cfg, geometry=geom, camera_file=cam_file,
+                       log_dir=os.path.join(HERE, cfg.paths.log_dir), remember_theme=theme.save_light_pref)
+    win.log.add(cam_words, error=not cam_file)
+    if last_calibration_path():
+        controller.load_calibration()
+    else:
+        win.log.add("No calibration used before: calibrate in Setup.")
+    win.resize(1280, 900)
     win.show()
-    rc = app.exec_()
-    controller.shutdown()
-    return rc
+    camera.start()
+    try:
+        return app.exec_()
+    finally:
+        controller.close()
 
 
 if __name__ == "__main__":

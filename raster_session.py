@@ -139,7 +139,7 @@ def _step_refusal(by: str, state: str) -> Tuple[str, str]:
     if by == RUN:
         return "not_running", f"no continuous run (raster state: {state})"
     return {
-        OFF: ("not_armed", "no raster armed: press Start first"),
-        ARMED: ("blacs_steps", "BLACS steps this raster: press 'Return to local control' first"),
+        OFF: ("not_armed", "no raster armed: press Arm here first"),
+        ARMED: ("blacs_steps", "BLACS steps this raster: press Take back first"),
         RUNNING: ("raster_running", "a continuous run steps this raster: press Stop first"),
     }[state]

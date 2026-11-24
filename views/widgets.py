@@ -42,6 +42,7 @@ class Section(QtWidgets.QWidget):
         line.setAttribute(QtCore.Qt.WA_StyledBackground, True)
         head.addWidget(line, 1, QtCore.Qt.AlignVCenter)
         v.addLayout(head)
+        self.head = head          # a status word may sit right of the hairline
         self.body = QtWidgets.QGridLayout()
         self.body.setContentsMargins(0, 0, 0, 0)
         self.body.setHorizontalSpacing(10)

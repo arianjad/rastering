@@ -135,6 +135,22 @@ def write_calibration_file(path: str, cal: CalibrationFile) -> CalibrationFile:
                            os.path.abspath(path))
 
 
+def camera_changed(now: Optional[Dict[str, Any]], saved: Optional[Dict[str, Any]]) -> bool:
+    """True when a camera setting stored with the calibration (region, rotation, mirror) differs
+    from the one in use now. A key missing on either side never counts (older files have none)."""
+    if not now or not saved:
+        return False
+    for key, v in saved.items():
+        if key not in now:
+            continue
+        if isinstance(v, dict) and isinstance(now[key], dict):
+            if camera_changed(now[key], v):
+                return True
+        elif now[key] != v:
+            return True
+    return False
+
+
 def last_calibration_path(pointer: str = LAST_CALIBRATION_POINTER) -> Optional[str]:
     """The calibration file used last, if the pointer names one that still exists."""
     try:
