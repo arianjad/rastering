@@ -54,47 +54,25 @@ class NetworkConfig:
 
 @dataclass(frozen=True)
 class CameraConfig:
-    # Defaults for camera operation (uEye). ui.py reads these for UEyeConfig construction.
+    # Thorlabs Zelux. The camera settings file wins: when it loads, its values
+    # replace the ones below (camera_thorlabs.read_camera_ini).
+    camera_params_ini: Optional[str] = "camera_params.ini"
+    serial_number: str = ""        # empty: the first camera found
+    max_fps: float = 15.0          # soft limit of the grab loop [frames/s]
 
-    # Which uEye camera to open (0 is typical for single-camera setups)
-    camera_id: int = 0
-
-    # Path to a uEye Cockpit-exported .ini file.
-    # If set to a valid file, its settings OVERRIDE the fields below.
-    # Set to "" or None to use the manual fields instead.
-    camera_params_ini: Optional[str] = 'camera_params.ini'  # You can export this from the uEye Cockpit software after configuring your camera, and it will override the manual settings below.
-
-    # Acquisition pixel clock (MHz): controls FPS + bandwidth
-    pixel_clock_mhz: int = 10
-
-    # Default exposure (ms)
-    exposure_ms_default: float = 75
-
-    # Target FPS must be set to allow the exposure time (1/0.050s = 20 FPS)
-    target_fps: float = 1/exposure_ms_default * 1000
-
-    #  Analog Controls for the new camera.py logic
-    master_gain: int = 13           # 0-100
-    gamma: float = 1.6             # Will be converted to 160
-    enable_gain_boost: bool = False # False reduces noise
-
-    # Image orientation options (applied in UI via a display transform)
+    # Used only when no settings file loads.
+    exposure_ms: float = 75.0
+    gain: int = 13
+    gamma: float = 1.6             # software display gamma
+    width: int = 1440              # ROI [px]
+    height: int = 1080
+    start_x: int = 0               # ROI upper-left, absolute sensor px
+    start_y: int = 0
+    # Display: np.rot90 k (0 none, -1 90 deg clockwise, 2 180 deg, 1 90 deg
+    # anticlockwise), then mirror.
+    rotation_k: int = -1
     flip_x: bool = False
     flip_y: bool = True
-
-    # Requested AOI / output size (camera.py can honor these depending on your setup)
-    width: int = 1440
-    height: int = 1080
-    # BeamBox (Zelux): AOI upper-left corner, ABSOLUTE sensor pixels, the
-    # same meaning as the ini Start X/Y (clamped to the sensor). Used only
-    # when no camera ini loads. Was -100 as a centre offset; with the full
-    # 1440x1080 frame both meanings give start (0, 0).
-    roi_offset_x: int = 0
-    roi_offset_y: int = 0
-
-    # Capture strategy + channel order
-    use_freeze: bool = True   # use FreezeVideo loop
-    emit_rgb: bool = False     # convert BGR->RGB for UI
 
 
 @dataclass(frozen=True)
