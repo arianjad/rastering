@@ -165,6 +165,7 @@ class RasterWindow(QtWidgets.QMainWindow):
         self._fill_from_frame = True         # bounds and spiral centre from the first frame size
         self._backlash_to_save: set = set()   # axes of the last backlash Set not answered yet
         self._backlash_taken = False         # one of them took its value: save the file when all answered
+        self._cal_seen = None                # (path, affine) of the calibration last shown
         self._goto_shown = False             # a Go to x, y target was clicked or typed
         self._spec = None                    # the pattern last built (raster_paths.RasterSpec)
         self._pattern_error = ""
@@ -452,10 +453,17 @@ class RasterWindow(QtWidgets.QMainWindow):
         self._refresh()
 
     def _on_calibration(self, *_) -> None:
-        # The calibration changed (loaded, fitted, cleared or saved): a backlash answer still to
-        # come is not saved into it; after a load the motors take that file's backlash next.
-        self._backlash_to_save.clear()
-        self._backlash_taken = False
+        # Another calibration (loaded, fitted, cleared): a backlash answer still to come is not
+        # saved into it; after a load the motors take that file's backlash next. The same one saved
+        # again (user home Set, Save) keeps it: the answer is saved into that file when it comes.
+        cf = self.ctl.calibration_file
+        now = (cf.path, cf.affine) if cf is not None else None
+        same = now is not None and self._cal_seen is not None and now[0] == self._cal_seen[0] \
+            and now[1] is self._cal_seen[1]
+        self._cal_seen = now
+        if not same:
+            self._backlash_to_save.clear()
+            self._backlash_taken = False
         self._update_unreachable()
         self._show_goto()
         if self._points:

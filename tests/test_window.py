@@ -383,6 +383,27 @@ def test_a_backlash_answer_after_loading_another_file_does_not_rewrite_it(make, 
         assert f.read() == before
 
 
+def test_a_user_home_set_does_not_lose_a_backlash_set_still_waiting(make):
+    """Harm stopped: backlash Set while the stage was busy, then user home Set: saving the user home
+    let go of the backlash waiting for the motor, so the motor took 0.05 mm but the file kept the
+    old value, and the next start sent the old value to the motor. Saving the same file keeps the
+    waiting backlash; it is saved when the motor answers."""
+    rig, win = make()
+    path = rig.ctl.calibration_file.path
+    rig.x.gate = threading.Event()                  # a slow move: the backlash Set waits behind it
+    rig.ctl.jog_mm(0.1, 0.0)
+    assert rig.x.moving.wait(2)
+    win.setup.backlash_x.setValue(0.05)
+    win.setup.backlash_set_btn.click()
+    win.setup.user_home_x.setValue(4.0)
+    win.setup.user_home_set_btn.click()
+    pump()
+    rig.x.gate.set()
+    rig.idle()
+    pump_until(lambda: saved(path)["backlash"]["x"] == 0.05)
+    assert saved(path)["user_home"]["x"] == 4.0
+
+
 def test_an_arrow_moves_the_step_typed_even_before_enter(make):
     """Harm stopped: with Step at 1 mm the operator types 0.05 and clicks an arrow without Enter
     (the arrows take no focus, so the box had not taken the number); the stage moved 1 mm, 20

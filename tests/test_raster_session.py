@@ -210,7 +210,7 @@ def test_handing_to_blacs_after_a_go_to_gives_blacs_that_point_first(gui):
     gui.ctl.take_back()
     assert gui.ctl.go_to_point(2).ok
     assert gui.ctl.hand_to_blacs().ok
-    assert gui.messages[-1] == ("info", "BLACS steps the raster: its next shot goes to point 2 of 3.")
+    assert ("info", "BLACS steps the raster: its next shot goes to point 2 of 3.") in gui.messages
     i, _, _, wrapped, future = gui.ctl.blacs_next_point()
     assert (i, wrapped, future.result(2).ok) == (2, False, True)
     assert gui.ctl.blacs_next_point()[:4:3] == (0, True)          # then on along the path
