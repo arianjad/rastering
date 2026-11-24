@@ -16,6 +16,9 @@ Bounds = Tuple[float, float, float, float]  # xmin, xmax, ymin, ymax
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SETTINGS_DEFAULTS_FILE = os.path.join(HERE, "settings_defaults.json")
+# --simulate keeps its calibration, last-calibration pointer and defaults in this subfolder,
+# apart from the lab GUI's (raster_controller.data_files).
+SIM_FOLDER = "sim"
 
 
 @dataclass(frozen=True)

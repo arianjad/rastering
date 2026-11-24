@@ -59,6 +59,38 @@ def camera_setup(cfg: config.AppConfig) -> Tuple[object, object, str, str]:
     return cam_cfg, geom, path, f"Camera settings loaded from {path}."
 
 
+def build(cfg: config.AppConfig, *, here: str = HERE, remember_theme=None):
+    """The controller, the camera thread (not started) and the window, with the last calibration
+    loaded. here: the folder of the GUI's own files (tests pass a temporary folder)."""
+    from calibration import last_calibration_path
+    from camera_thorlabs import ThorCameraThread
+    from raster_controller import create_controller, data_files
+    from window import RasterWindow
+
+    files = data_files(cfg, here)
+    os.makedirs(os.path.dirname(files.pointer), exist_ok=True)
+    controller = create_controller(cfg, files)
+    cam_cfg, geom, cam_file, cam_words = camera_setup(cfg)
+    camera_class = None
+    if cfg.hardware.simulate:
+        from camera_sim import SimCamera
+        camera_class = SimCamera
+    camera = ThorCameraThread(cam_cfg, camera_class=camera_class)
+
+    win = RasterWindow(controller, camera, camera_config=cam_cfg, geometry=geom, camera_file=cam_file,
+                       log_dir=os.path.join(HERE, cfg.paths.log_dir),
+                       defaults_path=files.defaults, remember_theme=remember_theme)
+    win.log.add(cam_words, error=not cam_file)
+    if cfg.hardware.simulate:
+        win.log.add(f"Simulated: calibration and defaults are kept in {os.path.dirname(files.pointer)}, "
+                    "apart from the lab GUI's.")
+    if last_calibration_path(controller.pointer_path):
+        controller.load_calibration()
+    else:
+        win.log.add("No calibration used before: calibrate in Setup.")
+    return controller, camera, win
+
+
 def main(argv=None) -> int:
     args = parse_args(argv)
     cfg = app_config(args)
@@ -69,26 +101,7 @@ def main(argv=None) -> int:
     theme.apply_theme(app, light=theme.load_light_pref())
     app.setWindowIcon(QtGui.QIcon(os.path.join(HERE, "rastering.ico")))
 
-    from calibration import last_calibration_path
-    from camera_thorlabs import ThorCameraThread
-    from raster_controller import create_controller
-    from window import RasterWindow
-
-    controller = create_controller(cfg)
-    cam_cfg, geom, cam_file, cam_words = camera_setup(cfg)
-    camera_class = None
-    if cfg.hardware.simulate:
-        from camera_sim import SimCamera
-        camera_class = SimCamera
-    camera = ThorCameraThread(cam_cfg, camera_class=camera_class)
-
-    win = RasterWindow(controller, camera, camera_config=cam_cfg, geometry=geom, camera_file=cam_file,
-                       log_dir=os.path.join(HERE, cfg.paths.log_dir), remember_theme=theme.save_light_pref)
-    win.log.add(cam_words, error=not cam_file)
-    if last_calibration_path():
-        controller.load_calibration()
-    else:
-        win.log.add("No calibration used before: calibrate in Setup.")
+    controller, camera, win = build(cfg, remember_theme=theme.save_light_pref)
     win.resize(1280, 900)
     win.show()
     camera.start()

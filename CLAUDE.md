@@ -24,6 +24,7 @@ Laser ablation rastering control: Thorlabs Z912 motors, Thorlabs Zelux camera, p
 
 - `HardwareConfig.simulate = True` (`main_rastering.py --simulate`): `raster_controller.create_controller` builds `motors_sim.SimulatedMotor` axes instead of KCubes; pythonnet and Kinesis are never loaded.
 - Explicit only: a KCube that fails to start is an error, never a silent switch to simulated motors.
+- A simulated copy keeps its calibration fit, last-calibration pointer and saved defaults in `sim/` (`raster_controller.data_files`): it never loads or overwrites the lab GUI's files.
 
 ## Worktrees
 

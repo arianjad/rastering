@@ -26,7 +26,7 @@ from PyQt5.QtCore import QObject, pyqtSignal
 from calibration import (LAST_CALIBRATION_POINTER, AffineCalibration, CalibrationFile, fit_affine,
                          last_calibration_path, read_calibration_file, remember_calibration_path,
                          write_calibration_file)
-from config import APP_CONFIG, AppConfig, HardwareConfig
+from config import APP_CONFIG, SETTINGS_DEFAULTS_FILE, SIM_FOLDER, AppConfig, HardwareConfig
 from raster_paths import points_from_spec
 from raster_session import BLACS, GUI, RUN, RasterPlan, RasterSession, RasterSnapshot
 from stage import Command, Result, Stage, StagePosition
@@ -110,6 +110,11 @@ class SystemController(QObject):
     @property
     def calibration(self) -> Optional[AffineCalibration]:
         return self._stage.calibration
+
+    @property
+    def pointer_path(self) -> str:
+        """The file that names the calibration used last."""
+        return self._pointer_path
 
     @property
     def calibration_file(self) -> Optional[CalibrationFile]:
@@ -721,9 +726,31 @@ def _wait(future: "Future[Result]", limit_s: float, busy_words: str) -> Result:
     return res
 
 
-def create_controller(cfg: AppConfig = APP_CONFIG) -> SystemController:
+@dataclass(frozen=True)
+class DataFiles:
+    """The files the GUI writes by itself."""
+    calibration: str   # every calibration fit is saved here
+    pointer: str       # names the calibration file used last
+    defaults: str      # File > Save settings as defaults
+
+
+def data_files(cfg: AppConfig = APP_CONFIG, here: str = HERE) -> DataFiles:
+    """Where the GUI keeps its own files: in `here` (this folder unless a test says otherwise).
+    A simulated copy keeps them in here/sim/, so it never loads or overwrites the lab GUI's
+    calibration (its backlash goes to the KCubes at the next real start) or defaults."""
+    cal = cfg.paths.calibration_path
+    if cfg.hardware.simulate:
+        here = os.path.join(here, SIM_FOLDER)
+        cal = os.path.basename(cal)
+    return DataFiles(calibration=cal if os.path.isabs(cal) else os.path.join(here, cal),
+                     pointer=os.path.join(here, os.path.basename(LAST_CALIBRATION_POINTER)),
+                     defaults=os.path.join(here, os.path.basename(SETTINGS_DEFAULTS_FILE)))
+
+
+def create_controller(cfg: AppConfig = APP_CONFIG, files: Optional[DataFiles] = None) -> SystemController:
     """The controller with the KCubes (or simulated motors when cfg.hardware.simulate), serving
-    BLACS when cfg.network.blacs_link."""
+    BLACS when cfg.network.blacs_link. files: default data_files(cfg)."""
+    files = files or data_files(cfg)
     hw = cfg.hardware
     if hw.simulate:
         from motors_sim import SimulatedMotor
@@ -739,10 +766,8 @@ def create_controller(cfg: AppConfig = APP_CONFIG) -> SystemController:
             except Exception:       # Y's error is the one to show; this one goes to the console
                 traceback.print_exc()
             raise
-    path = cfg.paths.calibration_path
-    ctl = SystemController(motor_x, motor_y, travel_mm=hw.travel_mm,
-                           calibration_path=path if os.path.isabs(path) else os.path.join(HERE, path),
-                           close_wait_s=longest_stage_job_s(hw))
+    ctl = SystemController(motor_x, motor_y, travel_mm=hw.travel_mm, calibration_path=files.calibration,
+                           pointer_path=files.pointer, close_wait_s=longest_stage_job_s(hw))
     if cfg.network.blacs_link:
         ctl.start_menu_server()
     return ctl
