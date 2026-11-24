@@ -6,7 +6,7 @@ import threading
 import time
 
 import pytest
-from bbx_zmq import Refused
+from raster_session import Refused
 
 from rig import LINE, Rig, wait_until
 from raster_session import BLACS, GUI, RUN, RasterPlan, RasterSession

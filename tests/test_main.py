@@ -24,7 +24,7 @@ import main_rastering  # noqa: E402
 def _sim_cfg() -> config.AppConfig:
     c = config.APP_CONFIG
     return dataclasses.replace(c, hardware=dataclasses.replace(c.hardware, simulate=True),
-                               network=dataclasses.replace(c.network, blacs_link=False))
+                               network=dataclasses.replace(c.network, zmq_bind="", pub_bind=""))
 
 
 def _files(folder) -> dict:

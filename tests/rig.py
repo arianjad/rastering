@@ -1,6 +1,6 @@
-"""Test rig: a real SystemController (stage thread, raster session, calibration, BLACS menu server
-on its thread) with two in-memory motors in place of the Z912 KCubes. No Kinesis, no camera, no
-socket: BLACS's real Client talks to the GUI over bbx_zmq.InMemoryTransport."""
+"""Test rig: a real SystemController (stage thread, raster session, calibration, the BLACS link's
+request and publisher threads) with two in-memory motors in place of the Z912 KCubes. No Kinesis,
+no camera, no socket: `Blacs` sends RaX's request envelopes over zmq_v2.InMemoryTransport."""
 from __future__ import annotations
 
 import json
@@ -11,10 +11,10 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from bbx_zmq import Client, InMemoryTransport  # noqa: E402
-from bbx_zmq.menus.rastering import MENU  # noqa: E402
+from bbx_zmq.zmq_v2 import InMemoryTransport, encode_request, parse_envelope  # noqa: E402
 from PyQt5.QtCore import Qt  # noqa: E402
 
+import blacs_link  # noqa: E402
 import raster_controller as rc  # noqa: E402
 from raster_paths import RasterSpec  # noqa: E402
 from raster_session import RasterPlan  # noqa: E402
@@ -22,6 +22,7 @@ from raster_session import RasterPlan  # noqa: E402
 TRAVEL = (0.0, 12.0, 0.0, 12.0)    # [mm] the Z912 travel (config.py HardwareConfig.travel_mm)
 MM_PER_PX = 0.01                   # test calibration: motor [mm] = 0.01 * image [px]
 PATH = [(100.0, 200.0), (110.0, 200.0), (120.0, 200.0)]     # [px] a 3-point test pattern
+blacs_link.SERVE_POLL_MS = 20       # [ms] the request thread sees its stop at once: quick tests
 LINE = RasterSpec(kind="square_x", bounds=(100.0, 120.0, 200.0, 200.0), xstep=10.0, ystep=10.0)  # = PATH
 
 
@@ -84,12 +85,34 @@ def wait_until(predicate, timeout_s=2.0):
         time.sleep(0.002)
 
 
+class Blacs:
+    """BLACS's REQ end of the link: one request, one reply, RaX's envelope (zmq_v2)."""
+
+    def __init__(self, transport):
+        self.t = transport
+        self.n = 0
+
+    def ask(self, action, connection="", value=None, *, wait_s=5.0, **args) -> dict:
+        self.n += 1
+        self.t.send(encode_request(action, request_id=self.n, connection=connection, value=value,
+                                   args=args or None))
+        reply = parse_envelope(self.t.recv(timeout_ms=int(wait_s * 1000)))
+        assert reply.get("id") == self.n
+        return reply
+
+    def program(self, name, value, **args) -> dict:
+        return self.ask("PROGRAM_VALUE", name, value, **args)
+
+    def check(self, name) -> dict:
+        return self.ask("CHECK_VALUE", name)
+
+
 class Rig:
     """The GUI without its window. `messages`: (kind, text) log lines; `snaps`: raster snapshots;
     `cals`: calibration_changed payloads; `calls`: every motor call, both axes, in order.
-    blacs=True: the BLACS menu link runs too, and `client` is BLACS's client on it."""
+    blacs=True: the BLACS link runs too; `blacs` asks it, `published` gets its PUB frames."""
 
-    def __init__(self, tmp_path, *, calibrated=True, blacs=False, menu=None, pos=1.0, clip=None):
+    def __init__(self, tmp_path, *, calibrated=True, blacs=False, pos=1.0, clip=None):
         self.calls = []
         self.x = FakeMotor("X", self.calls, pos, clip)
         self.y = FakeMotor("Y", self.calls, pos, clip)
@@ -107,9 +130,10 @@ class Rig:
             assert self.ctl.load_calibration(write_calibration(tmp_path / "cal.json")).ok
         if blacs:
             to_gui, from_gui = InMemoryTransport.pair()
-            self.ctl.start_menu_server(from_gui)
-            self.client = Client(menu or MENU, lambda: to_gui, margin_s=0.5)
-            self.client.hello()
+            self.published = []
+            self.ctl.start_blacs_link(transport=from_gui, publish=self.published.append)
+            self.blacs = Blacs(to_gui)
+            assert self.blacs.ask("HELLO")["status"] == "SUCCESS"
         self.idle()
 
     def plan(self, spec=LINE, **kw):

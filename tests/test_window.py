@@ -1,6 +1,6 @@
 """The main window as the operator sees it: a real RasterWindow, offscreen, on the real controller
 with two in-memory motors (tests/rig.py) and the fake camera (camera_sim.SimCamera) in its real
-thread. No Kinesis, no camera SDK, no socket; BLACS talks over bbx_zmq.InMemoryTransport.
+thread. No Kinesis, no camera SDK, no socket; BLACS talks over zmq_v2.InMemoryTransport.
 
     QT_QPA_PLATFORM=offscreen ZMQ_V2_REQUIRED=1 py -3.13 -m pytest -q tests/test_window.py
 """
@@ -189,7 +189,7 @@ def test_escape_stops_a_raster_blacs_armed_a_moment_ago(make):
     went on stepping the stage. Esc stops whatever raster the controller has, at once."""
     rig, win = make(blacs=True)
     QtWidgets.QApplication.setActiveWindow(win)
-    assert rig.client.press("arm")["path_len"] == 3          # BLACS's thread; no Qt events run since
+    assert rig.blacs.program("arm_raster", 0)["armed"] == 3   # BLACS's thread; no Qt events run since
     QTest.keyClick(win, QtCore.Qt.Key_Escape)
     assert rig.ctl.raster_snapshot().state == "off"
 
@@ -247,9 +247,10 @@ def test_blacs_arms_the_pattern_drawn_in_the_window(make):
     shown = win._points
     assert len(shown) == 12 and win.pattern.count.text() == "12 points"
 
-    assert rig.client.press("arm") == {"path_len": 12, "dropped": 0}
-    first = rig.client.press("next_point")
-    assert (first["x"], first["y"]) == shown[0]
+    armed = rig.blacs.program("arm_raster", 0)
+    assert (armed["armed"], armed["dropped"]) == (12, 0)
+    first = rig.blacs.program("move_to_next", 1)
+    assert tuple(first["target_xy"]) == shown[0]
     pump_until(lambda: win.bar.status()["state"] == "armed" and win.bar.status()["point_index"] == 0)
     assert first["point_index"] == 0 and win.bar.point.value.text() == "0 of 12"   # the shot file's number
 
@@ -277,10 +278,10 @@ def test_a_point_number_being_typed_survives_a_blacs_shot(make):
     another point. What is typed stays until the operator enters it or leaves the box."""
     rig, win = make(blacs=True)
     win._show_step(RUN)
-    assert rig.client.press("arm")["path_len"] == 3
+    assert rig.blacs.program("arm_raster", 0)["armed"] == 3
     pump_until(lambda: win.bar.status()["state"] == "armed")
     type_into(win.run.point_box, "2")
-    assert rig.client.press("next_point")["point_index"] == 0
+    assert rig.blacs.program("move_to_next", 1)["point_index"] == 0
     pump_until(lambda: win.bar.status()["point_index"] == 0)
     assert win.run.point_box.text() == "2"
 
@@ -535,20 +536,20 @@ def test_a_blacs_link_that_did_not_start_is_shown_when_the_window_opens(tmp_path
     GUI) before the window exists, so the one message saying so went nowhere and the operator
     learnt it only when BLACS's shots failed. The window shows the link's words when it opens.
     The port is never bound: the socket maker is replaced by one that fails."""
-    import raster_controller as rc
+    import blacs_link
 
     def port_taken(*_args, **_kwargs):
         raise OSError("Address in use")
 
-    monkeypatch.setattr(rc, "ZmqRepTransport", port_taken)
+    monkeypatch.setattr(blacs_link, "ZmqRepTransport", port_taken)
     rig = Rig(tmp_path)
-    rig.ctl.start_menu_server()
+    rig.ctl.start_blacs_link("tcp://*:55535", "")
     pump_until(lambda: rig.ctl.blacs_link_status[0] == "error")
     cam = ThorCameraThread(CAM, camera_class=SimCamera)
     win = RasterWindow(rig.ctl, cam, camera_config=CAM, geometry=GEOM, log_dir=str(tmp_path / "logs"),
                        defaults_path=str(tmp_path / "settings_defaults.json"))
     try:
-        assert any("BLACS link not started, port 55535: Address in use" in line for line in win.log.lines())
+        assert any("BLACS link not started on tcp://*:55535: Address in use" in line for line in win.log.lines())
     finally:
         win.close()
         rig.close()

@@ -13,7 +13,7 @@ py -3.13 main_rastering.py --simulate --no-blacs   fake camera and stages, no ne
 ```
 
 `--simulate` (or `RASTER_SIMULATE=1`) never loads the camera SDK or Kinesis. `--no-blacs` leaves
-the BLACS port free, so a simulated copy can run next to the lab's GUI.
+the BLACS ports (55535, 55536) free, so a simulated copy can run next to the lab's GUI.
 
 ## The window
 
@@ -34,16 +34,16 @@ the BLACS port free, so a simulated copy can run next to the lab's GUI.
 
 ## BLACS link
 
-A menu server on the rastering menu's port (beambox-daq `src/bbx_zmq/menus/rastering.py`, the
-same file BLACS loads; handlers in `raster_controller.py` `RasterMenuLink`). BLACS reads all values
-in one snapshot, moves the spot to x, y [px], sets shots per point, and presses arm, disarm and
-next point. Arm takes the pattern set up in the window. `stage.py` is the one check for every
-move: a point outside the stage travel, a px point without a calibration, or a move while a raster
-is armed is refused, with words that say why.
+RaX's protocol (`blacs_link.py`; envelope from RaX's `zmq_v2.py`, beambox-daq `bbx_zmq.zmq_v2`):
+BLACS sends requests to port 55535 (REQ/REP) and listens to the live state on port 55536
+(PUB/SUB). Requests: move to x, y [px] (`laser_raster_xy`), arm (`arm_raster`: the pattern set up
+in the window), next point (`move_to_next`), shots per point, disarm, and read the position.
+Published: the position [px] about 4 times a second; heartbeat, raster mode, owner, calibration
+and progress about once a second. `stage.py` is the one check for every move.
 
 ## Requirements
 
-- Python 3.13 with PyQt5, pyqtgraph, numpy, scipy, pyzmq; beambox-daq `bbx_zmq` on the path.
+- Python 3.13 with PyQt5, pyqtgraph, numpy, scipy, pyzmq; beambox-daq `bbx_zmq.zmq_v2` on the path.
 - Thorlabs Kinesis (for the stages) and the Thorlabs camera DLLs (in `dlls/`, SDK in `thorlabs_tsi_sdk/`).
 - Motor serials, Kinesis folder and stage travel: `config.py` (`HardwareConfig`).
 
@@ -53,4 +53,4 @@ is armed is refused, with words that say why.
 QT_QPA_PLATFORM=offscreen QT_QPA_FONTDIR=C:/Windows/Fonts ZMQ_V2_REQUIRED=1 py -3.13 -m pytest -q -p no:cacheprovider tests
 ```
 
-No hardware, no camera, no network port: safe to run while the lab's GUI runs (about 6 s).
+No hardware, no camera, no network port: safe to run while the lab's GUI runs (about 15 s).

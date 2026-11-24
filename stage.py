@@ -11,9 +11,10 @@ shows them. Only the motor thread calls the motors. When the queue is idle the t
 position and reports it when it changed; during a move or a home the motor reports it on the way. The thread outlives any one job (an error is logged and
 the next job runs); close() drops the queued jobs, lets the one in flight end, then disconnects.
 
-Refusal codes BLACS can see are the menu's: raster_armed / raster_held / raster_running (a raster
-holds the stage), not_calibrated, and move_refused for everything else (outside the travel, a
-motor error, a raster point dropped by Stop or a new arm, the GUI closing); the words say which.
+Refusal codes (BLACS sees them in the reply's error): raster_armed / raster_held / raster_running
+(a raster holds the stage), not_calibrated, and motor_move_failed (RaX's name) for everything else
+(outside the travel, a motor error, a raster point dropped by Stop or a new arm, the GUI closing);
+the words say which.
 """
 from __future__ import annotations
 
@@ -25,7 +26,7 @@ from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Protocol, Sequence, Tuple
 
 import numpy as np
-from bbx_zmq.menus.rastering import ARMED, LOCAL, OFF, RUNNING
+from raster_session import ARMED, LOCAL, OFF, RUNNING
 
 from calibration import AffineCalibration
 
@@ -246,7 +247,7 @@ class Stage:
                 self._log("info", f"{cmd.label}: cancelled before it ran.")
             return
         if self._closing:
-            result = Result(False, f"{cmd.label}: not run, the GUI is closing", "move_refused")
+            result = Result(False, f"{cmd.label}: not run, the GUI is closing", "motor_move_failed")
         else:
             result = self._execute(cmd)
         cmd.future.set_result(result)
@@ -297,7 +298,7 @@ class Stage:
             return Result(True, value=value)
         except Exception as e:
             self._log("error", f"{cmd.label} failed: {e}")
-            return Result(False, words=f"{cmd.label} failed: {e}", code="move_refused")
+            return Result(False, words=f"{cmd.label} failed: {e}", code="motor_move_failed")
 
     def _move(self, cmd: Command) -> Result:
         target = self._admit(cmd)
@@ -324,7 +325,7 @@ class Stage:
         state, run = self._raster_state()
         if cmd.raster_run is not None:
             if state == OFF or run != cmd.raster_run:
-                return Result(False, "dropped: the raster was stopped or armed again", "move_refused")
+                return Result(False, "dropped: the raster was stopped or armed again", "motor_move_failed")
         elif state != OFF:
             code, holder = RASTER_HOLDERS[state]
             if cmd.from_blacs:
@@ -350,7 +351,7 @@ class Stage:
         else:
             mm = (float(cmd.mm[0]), float(cmd.mm[1]))
         if not within_travel(np.array([mm]), self.travel_mm)[0]:
-            return Result(False, out_of_bounds_message(self.travel_mm, mm, cmd.px), "move_refused")
+            return Result(False, out_of_bounds_message(self.travel_mm, mm, cmd.px), "motor_move_failed")
         return clamp_to_bounds(mm, self.travel_mm)
 
     def _read_mm(self) -> XY:

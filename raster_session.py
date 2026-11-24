@@ -1,25 +1,32 @@
 """What the raster is doing: one state word, the armed path and its cursor.
 
-Pure: no Qt, no threads (the controller holds the lock around every call). The state words are
-the rastering menu's (bbx_zmq/menus/rastering.py):
+Pure: no Qt, no threads (the controller holds the lock around every call). The state words:
     OFF      no raster armed
     LOCAL    armed in step mode, stepped at the GUI
     ARMED    armed in step mode, stepped by BLACS (one point per group of shots)
     RUNNING  a continuous run at the GUI
-The path always loops: the step after the last point is point 0 again (`wrapped`). A request
-the state does not allow raises bbx_zmq.Refused(code, words).
+(blacs_link.py maps them onto RaX's raster_mode / raster_owner words.) The path always loops: the
+step after the last point is point 0 again (`wrapped`). A request the state does not allow raises
+Refused(code, words).
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional, Sequence, Tuple
 
-from bbx_zmq import Refused
-from bbx_zmq.menus.rastering import ARMED, LOCAL, OFF, RUNNING
-
 from raster_paths import RasterSpec
 
 XY = Tuple[float, float]
+OFF, LOCAL, ARMED, RUNNING = "off", "local", "armed", "running"
+
+
+class Refused(Exception):
+    """A request the GUI does not do: `code` (short, for programs) and `words` (for people)."""
+
+    def __init__(self, code: str, words: str):
+        super().__init__(f"[{code}] {words}")
+        self.code = code
+        self.words = words
 
 # Who asks for a next point, and the state in which they may.
 GUI, BLACS, RUN = "gui", "blacs", "run"
@@ -146,7 +153,7 @@ class RasterSession:
     def take_back(self, by: str) -> bool:
         """The GUI steps the raster from where it is. Returns True when BLACS had it."""
         if by == BLACS and self.state == RUNNING:
-            raise Refused("raster_running", "a continuous raster runs from the GUI; stop it there")
+            raise Refused("raster_in_continuous_mode", "a continuous raster runs from the GUI; stop it there")
         was_armed = self.state == ARMED
         if was_armed:
             self.state = LOCAL

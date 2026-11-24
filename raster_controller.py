@@ -8,32 +8,32 @@ and also says so on `message`. Parts:
     raster_session.py  the raster's state, path and cursor
     calibration.py     the px -> mm fit and the calibration file
     raster_paths.py    the pattern points
-BLACS talks to RasterMenuLink over the menu link (bbx_zmq, menu bbx_zmq/menus/rastering.py).
+    blacs_link.py      BLACS's link (RaX's protocol: REQ/REP requests, PUB/SUB live state)
 """
 from __future__ import annotations
 
 import os
 import threading
 import traceback
-from concurrent.futures import Future, TimeoutError as FutureTimeout
+from concurrent.futures import Future
 from dataclasses import dataclass, field, replace
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from bbx_zmq import MenuServer, Refused, ZmqRepTransport
-from bbx_zmq.menus.rastering import ARMED, LOCAL, MENU, OFF, RUNNING
 from PyQt5.QtCore import QObject, pyqtSignal
+
+import blacs_link
 
 from calibration import (LAST_CALIBRATION_POINTER, AffineCalibration, CalibrationFile, fit_affine,
                          read_calibration_file, remember_calibration_path, remembered_calibration_path,
                          write_calibration_file)
 from config import APP_CONFIG, SETTINGS_DEFAULTS_FILE, SIM_FOLDER, AppConfig, HardwareConfig
 from raster_paths import points_from_spec
-from raster_session import BLACS, GUI, RUN, RasterPlan, RasterSession, RasterSnapshot
+from raster_session import (ARMED, BLACS, GUI, LOCAL, OFF, RUN, RUNNING, RasterPlan, RasterSession, RasterSnapshot,
+                            Refused)
 from stage import Command, Result, Stage, StagePosition
 
 XY = Tuple[float, float]
 HERE = os.path.dirname(os.path.abspath(__file__))
-_MENU_POLL_MS = 50   # the BLACS link checks for a request this often, and for its stop
 _SAVE_ERRORS = (OSError, TypeError, ValueError)   # a calibration file not written (the old one stays)
 
 
@@ -94,8 +94,8 @@ class SystemController(QObject):
         self._cal_file: Optional[CalibrationFile] = None
         self._clicks: Optional[_Clicks] = None
         self._user_home: Tuple[Optional[float], Optional[float]] = (None, None)   # [mm]; None: not set
-        self._menu_thread: Optional[threading.Thread] = None
-        self._menu_stop = threading.Event()
+        self._link_threads: List[threading.Thread] = []
+        self._link_stop = threading.Event()
         self._link_status: Tuple[str, str] = ("", "")
         self._stage = Stage(motor_x, motor_y, travel_mm, raster_state=self._raster_state,
                             on_log=self.message.emit, on_position=self.position_changed.emit,
@@ -146,7 +146,7 @@ class SystemController(QObject):
     @property
     def blacs_link_status(self) -> Tuple[str, str]:
         """(kind, words) of the BLACS link's latest news, also sent on `message`: kind "info"
-        (serving on its port) or "error" (not started, or its socket keeps failing); ("", "")
+        (serving on its ports) or "error" (not started, or a socket keeps failing); ("", "")
         before it serves on a port. The link starts before the window exists, so the window shows
         this when it opens."""
         with self._lock:
@@ -162,8 +162,10 @@ class SystemController(QObject):
 
     # --- stage jobs: each returns a Future of its Result; never wait on it in the GUI thread ---
 
-    def move_mm(self, x: float, y: float) -> "Future[Result]":
-        return self._stage.submit(Command(f"Move to ({x:.4f}, {y:.4f}) mm", "move", mm=(float(x), float(y))))
+    def move_mm(self, x: float, y: float, *, from_blacs: bool = False) -> "Future[Result]":
+        who = "BLACS move" if from_blacs else "Move"
+        return self._stage.submit(Command(f"{who} to ({x:.4f}, {y:.4f}) mm", "move", mm=(float(x), float(y)),
+                                          from_blacs=from_blacs))
 
     def move_axis_mm(self, axis: str, value: float) -> "Future[Result]":
         axis = _axis(axis)
@@ -349,13 +351,13 @@ class SystemController(QObject):
             self.raster_changed.emit(snap)
             self.message.emit("info", "Raster stopped.")
 
-    # --- BLACS (called by RasterMenuLink on the menu-server thread; raise Refused) ---
+    # --- BLACS (called by blacs_link.RaxLink on its request thread; raise Refused) ---
 
     def blacs_arm(self) -> Dict[str, int]:
         with self._lock:
             s = self._session
             if s.state == RUNNING:
-                raise Refused("raster_running", "a continuous raster runs from the GUI; stop it there")
+                raise Refused("raster_in_continuous_mode", "a continuous raster runs from the GUI; stop it there")
             if s.state == LOCAL:
                 s.hand_to_blacs()
                 words = (f"BLACS took the armed raster: its next shot goes to point {s.next_index(BLACS)} "
@@ -483,24 +485,24 @@ class SystemController(QObject):
 
     # --- BLACS link ---
 
-    def start_menu_server(self, transport=None) -> None:
-        """Serve BLACS from a thread: on the menu's port, or on `transport` (tests:
-        bbx_zmq.InMemoryTransport)."""
-        if self._menu_thread is not None and self._menu_thread.is_alive():
+    def start_blacs_link(self, bind: str = APP_CONFIG.network.zmq_bind, pub_bind: str = APP_CONFIG.network.pub_bind,
+                         *, transport=None, publish=None) -> None:
+        """Serve BLACS (blacs_link.py) from two threads: requests on `bind`, live state on
+        `pub_bind`; tests pass `transport` (an InMemoryTransport end) and `publish` instead."""
+        if any(t.is_alive() for t in self._link_threads):
             return
-        self._menu_stop.clear()
-        self._menu_thread = threading.Thread(target=self._serve_menu, args=(transport,),
-                                             name="blacs-menu", daemon=True)
-        self._menu_thread.start()
+        self._link_stop.clear()
+        self._link_threads = blacs_link.start(self, self._link_stop, bind=bind, pub_bind=pub_bind,
+                                              transport=transport, publish=publish, news=self._link_news)
 
     def close(self) -> None:
         """Stop the raster and the BLACS link, drop the queued stage jobs, let the one in flight
         end (up to close_wait_s), disconnect the motors."""
-        self._menu_stop.set()
+        self._link_stop.set()
         self.stop_raster()
         self._stage.close(self.close_wait_s)
-        if self._menu_thread is not None:
-            self._menu_thread.join(1.0)
+        for t in self._link_threads:
+            t.join(1.0)
 
     # --- inside ---
 
@@ -685,108 +687,10 @@ class SystemController(QObject):
         except OSError as e:
             self.message.emit("error", f"Could not record {path} as the last calibration: {e}")
 
-    def _serve_menu(self, transport) -> None:
-        if transport is None:
-            try:
-                transport = ZmqRepTransport(f"tcp://*:{MENU.port}", recv_timeout_ms=_MENU_POLL_MS)
-            except Exception as e:   # port taken, no pyzmq: the GUI runs without BLACS
-                self._link_news("error", f"BLACS link not started, port {MENU.port}: {e}")
-                return
-            self._link_news("info", f"BLACS link: menu {MENU.name} v{MENU.version} on port {MENU.port}.")
-        server = RasterMenuLink(self).menu_server(transport)
-        failures = 0
-        while not self._menu_stop.is_set():
-            try:
-                server.serve_once(timeout_ms=_MENU_POLL_MS)
-                failures = 0
-            except Exception:    # handler errors are answered; this is the socket
-                traceback.print_exc()
-                failures += 1
-                if failures == 3:
-                    self._link_news("error", "BLACS link: the socket keeps failing; see the console.")
-                if failures >= 3:
-                    self._menu_stop.wait(0.25)
-        transport.close()
-
     def _link_news(self, kind: str, words: str) -> None:
         with self._lock:
             self._link_status = (kind, words)
         self.message.emit(kind, words)
-
-
-class RasterMenuLink:
-    """BLACS's requests on the rastering menu, answered on the menu-server thread.
-
-    bbx_zmq.MenuServer has already refused names not on the menu and values out of range. Each
-    handler asks the controller and answers what happened, or raises Refused(code, words) with the
-    GUI's own words (the stage's check and the raster session decide; this only passes them on):
-        read_all             xy, x, y [px] (where the stage is; None without a calibration),
-                             shots_per_step, raster_state, point_index, path_len
-        set xy               one move of both axes to [x, y] [px]; answers the point
-        set shots_per_step   stored; the window shows it
-        press arm            arm the Run tab's pattern in step mode for BLACS, or take over the
-                             raster held at the GUI where it is; answers path_len, dropped
-        press disarm         hand the raster to the GUI operator (path kept); answers was_armed
-        press next_point     step to the next point; answers point_index, path_len, x, y, frame,
-                             finished (True: this step started the path again at point 0),
-                             calibration_matrix, calibration_offset
-    A move the stage does not finish within the menu's time limit answers "gui_busy": the move
-    stays queued and still runs.
-    """
-
-    def __init__(self, controller: SystemController):
-        self.c = controller
-
-    def menu_server(self, transport) -> MenuServer:
-        return MenuServer(MENU, transport, read_all=self.read_all, set_value=self.set_value,
-                          press_button=self.press_button)
-
-    def read_all(self) -> Dict[str, Any]:
-        snap = self.c.raster_snapshot()
-        pos = self.c.position
-        px = pos.px if pos is not None else None
-        x, y = (float(px[0]), float(px[1])) if px is not None else (None, None)
-        return {"xy": [x, y] if px is not None else None, "x": x, "y": y,
-                "shots_per_step": snap.shots_per_step, "raster_state": snap.state,
-                "point_index": snap.point_index, "path_len": len(snap.path)}
-
-    def set_value(self, name: str, value):
-        if name == "xy":
-            limit = MENU.value("xy").set_s
-            res = _wait(self.c.move_px(float(value[0]), float(value[1]), from_blacs=True), limit,
-                        f"the stage did not finish the move to x, y within {limit:g} s; the move is "
-                        "still queued and will run")
-            return [float(v) for v in res.px]
-        if name == "shots_per_step":
-            return self.c.set_shots_per_step(int(value))
-        raise Refused("no_handler", f"no handler for {name!r}")
-
-    def press_button(self, name: str):
-        if name == "arm":
-            return self.c.blacs_arm()
-        if name == "disarm":
-            return {"was_armed": self.c.blacs_disarm()}
-        if name == "next_point":
-            i, (x, y), n, wrapped, future = self.c.blacs_next_point()
-            limit = MENU.button("next_point").press_s
-            _wait(future, limit, f"the stage did not reach the next point within {limit:g} s; the move is "
-                                 "still queued and will run, and that point gets no shot (the next shot's "
-                                 "next point steps past it)")
-            cal = self.c.calibration
-            return {"point_index": i, "path_len": n, "frame": "pixel", "x": x, "y": y, "finished": wrapped,
-                    **(cal.to_json() if cal is not None else {})}
-        raise Refused("no_handler", f"no handler for {name!r}")
-
-
-def _wait(future: "Future[Result]", limit_s: float, busy_words: str) -> Result:
-    """Wait (BLACS thread only) for a stage job; its refusal or a timeout becomes Refused."""
-    try:
-        res = future.result(timeout=limit_s)
-    except FutureTimeout:
-        raise Refused("gui_busy", busy_words) from None
-    if not res.ok:
-        raise Refused(res.code or "move_refused", res.words)
-    return res
 
 
 @dataclass(frozen=True)
@@ -812,7 +716,7 @@ def data_files(cfg: AppConfig = APP_CONFIG, here: str = HERE) -> DataFiles:
 
 def create_controller(cfg: AppConfig = APP_CONFIG, files: Optional[DataFiles] = None) -> SystemController:
     """The controller with the KCubes (or simulated motors when cfg.hardware.simulate), serving
-    BLACS when cfg.network.blacs_link. files: default data_files(cfg)."""
+    BLACS on cfg.network.zmq_bind / pub_bind ("": no link). files: default data_files(cfg)."""
     files = files or data_files(cfg)
     hw = cfg.hardware
     if hw.simulate:
@@ -831,6 +735,6 @@ def create_controller(cfg: AppConfig = APP_CONFIG, files: Optional[DataFiles] = 
             raise
     ctl = SystemController(motor_x, motor_y, travel_mm=hw.travel_mm, calibration_path=files.calibration,
                            pointer_path=files.pointer, close_wait_s=longest_stage_job_s(hw))
-    if cfg.network.blacs_link:
-        ctl.start_menu_server()
+    if cfg.network.zmq_bind:
+        ctl.start_blacs_link(cfg.network.zmq_bind, cfg.network.pub_bind)
     return ctl

@@ -42,7 +42,7 @@ def test_every_move_kind_outside_the_travel_is_refused_and_moves_nothing(gui, ki
     check and drives a Z912 into its end stop. Every kind is refused with the travel words, says
     so in the log, and no motor moves."""
     res = _every_move(gui.ctl)[kind]().result(2)
-    assert (res.ok, res.code) == (False, "move_refused")
+    assert (res.ok, res.code) == (False, "motor_move_failed")
     assert res.words.startswith("Rejected: motor out of bounds -- ") and "travel is (0.0, 12.0, 0.0, 12.0)" in res.words
     assert gui.moves() == []
     assert any("Rejected: motor out of bounds" in t for t in gui.refusals())

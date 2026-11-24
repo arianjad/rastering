@@ -1,14 +1,11 @@
-"""Test-suite gate for the shared ``bbx_zmq`` package (the BLACS menu link, BBX-190).
+"""Test-suite gate for RaX's protocol file ``bbx_zmq.zmq_v2`` (beambox-daq, installed editable).
 
-The menu-server tests ``pytest.importorskip("bbx_zmq.menus.rastering")`` so they stay green on
-a checkout where the beambox-daq package ``bbx_zmq`` (with its menus) is not on the path
-— which also means a run that tested nothing exits 0. Set
-``ZMQ_V2_REQUIRED=1`` (CI, pre-merge gates) to turn that skip into a loud
-collection error instead.
+The GUI imports it at start; without it every test that builds a controller fails at import.
+``ZMQ_V2_REQUIRED=1`` (pre-merge gates) makes that one loud collection error instead of many.
 """
 from __future__ import annotations
 
 import os
 
 if os.environ.get("ZMQ_V2_REQUIRED"):
-    import bbx_zmq.menus.rastering  # noqa: F401  -- fail collection loudly if the lib is missing
+    import bbx_zmq.zmq_v2  # noqa: F401  -- fail collection loudly if the lib is missing

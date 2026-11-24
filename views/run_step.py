@@ -9,7 +9,7 @@ from PyQt5 import QtCore, QtWidgets
 
 from .widgets import IntBox, NumberBox, Section, label, set_prop
 
-# What the raster does now, in one sentence per state (the menu's raster_state words).
+# What the raster does now, in one sentence per state (raster_session.py's state words).
 STATE_SENTENCES = {
     "off": "Nothing moves the stage on its own.",
     "local": "Armed and held here: Step moves to the next point; Continue runs on by itself.",

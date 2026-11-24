@@ -5,8 +5,8 @@
 
 --simulate: fake motors and a fake camera (camera_sim.py); the camera SDK and
 Kinesis are never loaded. Same as RASTER_SIMULATE=1.
---no-blacs: do not serve the BLACS menu link (its port stays free, so this copy
-can run next to the lab's real GUI).
+--no-blacs: no BLACS link (its two ports stay free, so this copy can run next to
+the lab's real GUI).
 """
 from __future__ import annotations
 
@@ -28,7 +28,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 def parse_args(argv=None) -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Rastering GUI")
     p.add_argument("--simulate", action="store_true", help="fake motors and fake camera (no hardware)")
-    p.add_argument("--no-blacs", action="store_true", help="do not serve the BLACS menu link")
+    p.add_argument("--no-blacs", action="store_true", help="no BLACS link (ports 55535, 55536 stay free)")
     return p.parse_args(argv)
 
 
@@ -39,7 +39,7 @@ def app_config(args: argparse.Namespace) -> config.AppConfig:
     return dataclasses.replace(
         cfg,
         hardware=dataclasses.replace(cfg.hardware, simulate=simulate),
-        network=dataclasses.replace(cfg.network, blacs_link=cfg.network.blacs_link and not args.no_blacs),
+        network=dataclasses.replace(cfg.network, zmq_bind="", pub_bind="") if args.no_blacs else cfg.network,
     )
 
 

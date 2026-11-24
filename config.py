@@ -50,9 +50,12 @@ class HardwareConfig:
 
 @dataclass(frozen=True)
 class NetworkConfig:
-    # Serve BLACS the rastering menu (beambox-daq bbx_zmq/menus/rastering.py, its port).
-    # False: the GUI runs without BLACS.
-    blacs_link: bool = True
+    # The BLACS link, RaX's protocol (blacs_link.py), upstream's names and ports. BLACS connects
+    # its REQ socket here ("" = no link: the GUI runs without BLACS)
+    zmq_bind: str = "tcp://*:55535"
+    # Live state for BLACS's SUB socket: positions about 4 Hz, heartbeat and raster words about
+    # 1 Hz ("" = not published)
+    pub_bind: str = "tcp://*:55536"
 
 
 @dataclass(frozen=True)

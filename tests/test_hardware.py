@@ -37,7 +37,7 @@ def test_a_simulated_run_never_loads_pythonnet(tmp_path):
     pythonnet in the process."""
     cfg = dataclasses.replace(
         config.APP_CONFIG, hardware=dataclasses.replace(config.APP_CONFIG.hardware, simulate=True),
-        network=dataclasses.replace(config.APP_CONFIG.network, blacs_link=False),
+        network=dataclasses.replace(config.APP_CONFIG.network, zmq_bind="", pub_bind=""),
         paths=dataclasses.replace(config.APP_CONFIG.paths, calibration_path=str(tmp_path / "c.json")))
     ctl = rc.create_controller(cfg)
     try:
@@ -66,7 +66,7 @@ def test_a_kcube_that_fails_to_start_is_an_error_not_a_simulated_motor(monkeypat
             raise RuntimeError("KCube X: USB gone")
 
     monkeypatch.setattr(hardware, "KCube", KCubeStub)
-    cfg = dataclasses.replace(config.APP_CONFIG, network=dataclasses.replace(config.APP_CONFIG.network, blacs_link=False))
+    cfg = dataclasses.replace(config.APP_CONFIG, network=dataclasses.replace(config.APP_CONFIG.network, zmq_bind="", pub_bind=""))
     with pytest.raises(RuntimeError, match="KCube Y"):
         rc.create_controller(cfg)
     assert [s.disconnected for s in started] == [True]

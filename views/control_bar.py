@@ -11,7 +11,7 @@ from PyQt5 import QtCore, QtWidgets
 
 from .widgets import label, set_prop
 
-# raster_state words are the BLACS menu's (bbx_zmq/menus/rastering.py): off, armed, local, running.
+# raster_state words are raster_session.py's: off, armed, local, running.
 # Each: (word on the block, look, tooltip). Looks differ by shape, not only colour:
 # off = thin outline, auto = solid block, held = thick double outline.
 STATE_WORDS = {
@@ -176,7 +176,7 @@ class ControlBar(QtWidgets.QWidget):
     def set_status(self, *, state=_KEEP, x_mm=_KEEP, y_mm=_KEEP, point_index=_KEEP,
                    path_len=_KEEP, calibration=_KEEP, cal_clicks=_KEEP, shots_per_point=_KEEP,
                    pattern_edited=_KEEP, options_edited=_KEEP, camera_fps=_KEEP) -> None:
-        """state: "off" | "running" | "armed" | "local" (the menu's raster_state).
+        """state: "off" | "running" | "armed" | "local" (raster_session.py's state words).
         x_mm, y_mm: stage position [mm], None = unknown.
         point_index: 0-based point the stage was last stepped to (-1/None = none yet);
         path_len: points in the armed path (0 = none; ping-pong counts the way back).
