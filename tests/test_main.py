@@ -71,7 +71,7 @@ def test_an_error_in_a_button_handler_is_logged_and_the_gui_goes_on(tmp_path, mo
 
         QtCore.QTimer.singleShot(0, broken)
         t = time.monotonic()
-        while time.monotonic() - t < 0.3:
+        while not win.log._lines[-1][1].startswith("Unexpected error") and time.monotonic() - t < 2:
             APP.processEvents()
         _stamp, text, error = win.log._lines[-1]
         assert error and "TypeError: int() argument must be a string" in text
