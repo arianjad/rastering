@@ -115,7 +115,7 @@ class CameraPanel(QtWidgets.QWidget):
         lay.addWidget(img)
 
         # --- region of interest ---
-        roi = Section("Region of interest")
+        roi = Section("Region of interest", folded=True)
         self._roi_group = roi
         g = roi.body
         self.roi_w = IntBox(1, 4096, "px", 4)
@@ -149,7 +149,7 @@ class CameraPanel(QtWidgets.QWidget):
         lay.addWidget(roi)
 
         # --- display ---
-        disp = Section("Display")
+        disp = Section("Display", folded=True)
         self._disp_group = disp
         g = disp.body
         self.rotation = QtWidgets.QComboBox()
@@ -170,7 +170,8 @@ class CameraPanel(QtWidgets.QWidget):
         lay.addWidget(disp)
 
         # --- settings file ---
-        f = Section("Camera settings file")
+        f = Section("Camera settings file", folded=True)
+        self._file_group = f
         self.file_label = label("No file loaded", tone="label")
         self.file_label.setMinimumWidth(10)
         f.body.addWidget(self.file_label, 0, 0)

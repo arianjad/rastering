@@ -169,8 +169,8 @@ class RunStep(QtWidgets.QWidget):
         self.record_file.setText(path)
         self.record_file.setVisible(bool(path))
 
-    def set_primary(self, button: QtWidgets.QPushButton) -> None:
-        """Style one button as the main action now."""
+    def set_primary(self, button) -> None:
+        """Style one button as the main action now (None: no button stands out)."""
         for b in (self.start_btn, self.arm_blacs_btn, self.step_btn, self.stop_btn, self.hand_btn,
                   self.take_back_btn, self.pause_btn, self.continue_btn, self.rearm_btn):
             set_prop(b, "kind", "primary" if b is button else "edited" if b is self.rearm_btn else "")

@@ -94,7 +94,9 @@ def gates(state: str, *, calibrated: bool, calibrating: bool, pattern_ok: bool,
     }
 
 
-PRIMARY = {"off": "start", "local": "step", "running": "stop", "armed": "take_back"}
+# The highlighted Run button per state. None while BLACS steps the raster: the most visible button
+# must not be one that takes the stage from a running sequence.
+PRIMARY = {"off": "start", "local": "step", "running": "stop", "armed": None}
 
 
 def jog_vector_mm(sx: int, sy: int, step_mm: float, geometry: DisplayGeometry, M=None) -> XY:
@@ -145,6 +147,7 @@ class RasterWindow(QtWidgets.QMainWindow):
     passes theme.save_light_pref; tests and scripts pass nothing)."""
 
     _backlash_not_set = QtCore.pyqtSignal(str)   # axis whose backlash Set failed (sent from the motor thread)
+    _move_answer = QtCore.pyqtSignal(str, bool)  # a hand move's warning or refusal, red (motor thread)
 
     def __init__(self, controller, camera, *, camera_config: ThorCamConfig, geometry: DisplayGeometry,
                  camera_file: str = "", log_dir: str = os.path.join(HERE, "logs"),
@@ -250,7 +253,8 @@ class RasterWindow(QtWidgets.QMainWindow):
         file_menu = self.menuBar().addMenu("&File")
         a = file_menu.addAction("Save settings as defaults", self._save_defaults)
         a.setShortcut(QtGui.QKeySequence("Ctrl+D"))
-        a.setToolTip("Pattern, run options, trail and jog step, loaded at the next start.")
+        a.setToolTip("Pattern, run options, trail, jog steps and calibration spots, loaded at the next start.")
+        file_menu.addAction("Revert to saved defaults", self._revert_defaults)
         file_menu.addSeparator()
         a = file_menu.addAction("Exit", self.close)
         a.setShortcut(QtGui.QKeySequence("Ctrl+Q"))
@@ -301,9 +305,9 @@ class RasterWindow(QtWidgets.QMainWindow):
         s.use_last_btn.clicked.connect(lambda: c.load_calibration())
         s.clear_btn.clicked.connect(c.clear_calibration)
         s.restore_camera_btn.clicked.connect(self._restore_camera)
-        s.home_x_btn.clicked.connect(lambda: c.home("X"))
-        s.home_y_btn.clicked.connect(lambda: c.home("Y"))
-        s.home_both_btn.clicked.connect(lambda: (c.home("X"), c.home("Y")))
+        s.home_x_btn.clicked.connect(lambda: self._hand(c.home("X")))
+        s.home_y_btn.clicked.connect(lambda: self._hand(c.home("Y")))
+        s.home_both_btn.clicked.connect(lambda: (self._hand(c.home("X")), self._hand(c.home("Y"))))
         s.user_home_set_btn.clicked.connect(self._set_user_home)
         s.user_home_here_btn.clicked.connect(self._user_home_here)
         s.backlash_set_btn.clicked.connect(self._set_backlash)
@@ -331,8 +335,9 @@ class RasterWindow(QtWidgets.QMainWindow):
 
         j = self.jog
         j.jog_requested.connect(self._jog)
-        j.go_to_requested.connect(c.move_mm)
-        j.home_requested.connect(lambda: c.go_user_home())
+        j.go_to_requested.connect(lambda x, y: self._hand(c.move_mm(x, y)))
+        j.home_requested.connect(lambda: self._hand(c.go_user_home()))
+        self._move_answer.connect(j.show_answer)
         j.x_box.valueChanged.connect(self._goto_typed)
         j.y_box.valueChanged.connect(self._goto_typed)
 
@@ -405,7 +410,8 @@ class RasterWindow(QtWidgets.QMainWindow):
             for w in widgets:
                 _gate(w, *g[key])
         r.rearm_btn.setVisible(s.path_edited)
-        r.set_primary(getattr(r, PRIMARY.get(s.state, "start") + "_btn"))
+        primary = PRIMARY.get(s.state, "start")
+        r.set_primary(getattr(r, primary + "_btn") if primary else None)
         self.jog.set_moves_enabled(*g["moves"])
         _gate(self.jog.home_btn, *g["go_user_home"])
         self.jog.show_note("" if self.ctl.calibration is not None else JOG_NOT_CALIBRATED)
@@ -654,9 +660,22 @@ class RasterWindow(QtWidgets.QMainWindow):
                          "exit unless you save a calibration (Setup, Save as…).", error=True)
 
     def _jog(self, sx: int, sy: int, step_mm: float) -> None:
+        if self.jog.held() and self._busy:   # a held arrow repeats only once the last step is done
+            return
         cal = self.ctl.calibration
         dx, dy = jog_vector_mm(sx, sy, step_mm, self._geometry, cal.M if cal is not None else None)
-        self.ctl.jog_mm(dx, dy)
+        self._hand(self.ctl.jog_mm(dx, dy))
+
+    def _hand(self, future) -> None:
+        """A stage move asked for here: what it cost (warning) or why it did not run shows under
+        the jog pad, next to the button pressed; a move with neither clears that line."""
+        def done(f):
+            try:
+                r = f.result()
+            except Exception:            # cancelled at close
+                return
+            self._move_answer.emit(r.words if not r.ok else r.warning, (not r.ok) or r.red)
+        future.add_done_callback(done)
 
     def _goto_typed(self, *_) -> None:
         self._goto_shown = True
@@ -813,6 +832,8 @@ class RasterWindow(QtWidgets.QMainWindow):
             jog = d.get("jog") if isinstance(d.get("jog"), dict) else {}
             if jog.get("step_mm") is not None:
                 self.jog.set_step_mm(float(jog["step_mm"]))
+            if jog.get("coarse_mm") is not None:
+                self.jog.set_coarse_mm(float(jog["coarse_mm"]))
             cal = d.get("calibration") if isinstance(d.get("calibration"), dict) else {}
             if cal.get("spots") is not None:
                 self.setup.spots.setValue(int(cal["spots"]))
@@ -824,7 +845,7 @@ class RasterWindow(QtWidgets.QMainWindow):
     def settings(self) -> dict:
         """What File > Save settings as defaults writes."""
         return {"pattern": self.pattern.settings(), "run": self.run.settings(),
-                "jog": {"step_mm": self.jog.step_mm()}, "calibration": {"spots": self.setup.spots.value()}}
+                "jog": {"step_mm": self.jog.step_mm(), "coarse_mm": self.jog.coarse_mm()}, "calibration": {"spots": self.setup.spots.value()}}
 
     def _save_defaults(self) -> None:
         try:
@@ -832,7 +853,16 @@ class RasterWindow(QtWidgets.QMainWindow):
         except (OSError, TypeError, ValueError) as e:
             self.log.add(f"Defaults not saved: {e}", error=True)
             return
-        self.log.add(f"Pattern, run options, jog step and calibration spots saved as defaults "
+        self.log.add(f"Pattern, run options, jog steps and calibration spots saved as defaults "
+                     f"({os.path.basename(self._defaults_path)}).")
+
+    def _revert_defaults(self) -> None:
+        """File > Revert to saved defaults: the saved pattern, run options, jog steps and spots."""
+        if not os.path.exists(self._defaults_path):
+            self.log.add("No saved defaults yet: File > Save settings as defaults saves the ones shown.")
+            return
+        self._apply_saved_settings()
+        self.log.add(f"Pattern, run options, jog steps and calibration spots set back to the saved defaults "
                      f"({os.path.basename(self._defaults_path)}).")
 
     def _set_light(self, on: bool) -> None:

@@ -25,15 +25,26 @@ def label(text: str = "", role: str | None = None, tone: str | None = None) -> Q
 
 class Section(QtWidgets.QWidget):
     """A heading (Bahnschrift) with a hairline to its right, then the content
-    in `body` (a QGridLayout: labels in column 0, values to the right)."""
+    in `body` (a QGridLayout: labels in column 0, values to the right).
+    folded True/False: an arrow before the heading folds the content away (the heading
+    text is clickable too); None: always open."""
 
-    def __init__(self, title: str, parent=None):
+    def __init__(self, title: str, parent=None, *, folded: bool | None = None):
         super().__init__(parent)
         v = QtWidgets.QVBoxLayout(self)
         v.setContentsMargins(0, 0, 0, 0)
         v.setSpacing(8)
         head = QtWidgets.QHBoxLayout()
         head.setSpacing(10)
+        self.fold_btn = None
+        if folded is not None:
+            self.fold_btn = QtWidgets.QToolButton()
+            self.fold_btn.setAutoRaise(True)
+            self.fold_btn.setAccessibleName(f"Fold {title}")
+            self.fold_btn.setStyleSheet("QToolButton { border: none; padding: 0px; }")
+            self.fold_btn.clicked.connect(lambda: self.set_folded(not self.is_folded()))
+            head.addWidget(self.fold_btn)
+            head.setSpacing(4)
         self.title = label(title, role="heading")
         head.addWidget(self.title)
         line = QtWidgets.QFrame()
@@ -43,11 +54,25 @@ class Section(QtWidgets.QWidget):
         head.addWidget(line, 1, QtCore.Qt.AlignVCenter)
         v.addLayout(head)
         self.head = head          # a status word may sit right of the hairline
-        self.body = QtWidgets.QGridLayout()
+        self.content = QtWidgets.QWidget()
+        self.body = QtWidgets.QGridLayout(self.content)
         self.body.setContentsMargins(0, 0, 0, 0)
         self.body.setHorizontalSpacing(10)
         self.body.setVerticalSpacing(6)
-        v.addLayout(self.body)
+        v.addWidget(self.content)
+        if folded is not None:
+            self.title.setCursor(QtCore.Qt.PointingHandCursor)
+            self.title.mousePressEvent = lambda _e: self.fold_btn.click()
+            self.set_folded(folded)
+
+    def is_folded(self) -> bool:
+        return self.content.isHidden()
+
+    def set_folded(self, folded: bool) -> None:
+        self.content.setVisible(not folded)
+        if self.fold_btn is not None:
+            self.fold_btn.setArrowType(QtCore.Qt.RightArrow if folded else QtCore.Qt.DownArrow)
+            self.fold_btn.setToolTip("Show" if folded else "Fold away")
 
 
 class _NoWheelUnlessFocused(QtCore.QObject):

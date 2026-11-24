@@ -640,3 +640,87 @@ def test_the_spots_box_sets_how_many_clicks_a_calibration_takes(make):
     win.setup.calibrate_btn.click()
     pump_until(lambda: win.bar.status()["calibration"] == "collecting")
     assert rig.ctl.calibration_clicks == (0, 5)
+
+
+def test_a_hand_move_warning_shows_under_the_arrows_and_a_clean_move_clears_it(make):
+    """Harm stopped: a Go to x, y outside the 0-12 mm travel (sent on to the KCube) was told only
+    in the bottom log line, far from the button, and the operator missed it. The warning shows
+    under the jog pad, in red; the next move with nothing to say clears it."""
+    rig, win = make()
+    win.jog.set_go_to(13.0, 5.0)
+    win.jog.go_btn.click()
+    pump_until(lambda: win.jog.answer.isVisibleTo(win))
+    assert "outside the travel" in win.jog.answer.text()
+    assert win.jog.answer.property("tone") == "fault"
+    win.jog.set_go_to(5.0, 5.0)
+    win.jog.go_btn.click()
+    pump_until(lambda: not win.jog.answer.isVisibleTo(win))
+
+
+def test_the_outer_arrows_move_by_the_coarse_step(make):
+    """Harm stopped: crossing the stage at the 0.01 mm fine step took hundreds of clicks, or the
+    step had to be retyped between fine and coarse moves. The outer (double) arrows move by the
+    coarse step, the inner ones by the fine step."""
+    rig, win = make(calibrated=False)
+    win.jog.set_step_mm(0.01)
+    win.jog.set_coarse_mm(0.5)
+    x0, y0 = rig.x.pos, rig.y.pos
+    win.jog.coarse_buttons[(1, 0)].click()
+    rig.idle()
+    win.jog.arrow_buttons[(1, 0)].click()
+    rig.idle()
+    assert abs(rig.x.pos - x0) + abs(rig.y.pos - y0) == pytest.approx(0.51)
+
+
+def test_a_held_arrow_repeats_but_never_runs_ahead_of_the_stage(make):
+    """Harm stopped: holding an arrow queued a jog every 150 ms whatever the stage did, so on a
+    slow stage the jogs piled up and the stage kept moving after the button was let go. A held
+    arrow repeats only once the last step is done, and letting go adds no step."""
+    rig, win = make(calibrated=False)
+    gate = threading.Event()                    # the stage stalls on its first move
+    rig.x.gate = rig.y.gate = gate
+    b = win.jog.arrow_buttons[(1, 0)]
+    QTest.mousePress(b, QtCore.Qt.LeftButton)
+    pump(1.2)                                   # about 5 repeats: 400 ms, then every 150 ms
+    QTest.mouseRelease(b, QtCore.Qt.LeftButton)
+    gate.set()
+    rig.idle()
+    pump()
+    jogs = [t for k, t in rig.messages if t.startswith("Jog (") and t.endswith(" ...")]
+    assert len(jogs) == 1
+
+
+def test_rarely_used_camera_sections_start_folded_and_open_with_one_click(make):
+    """Harm stopped: the Setup step needed about 500 px of scrolling at 1280 x 900, with the stage
+    controls below camera region, display and file settings that are set once. Those three start
+    folded; one click on the arrow opens one."""
+    rig, win = make()
+    cp = win.camera_panel
+    sections = (cp._roi_group, cp._disp_group, cp._file_group)
+    assert all(s.is_folded() for s in sections)
+    cp._roi_group.fold_btn.click()
+    assert not cp._roi_group.is_folded()
+
+
+def test_revert_to_saved_defaults_puts_the_saved_pattern_back(make):
+    """Harm stopped: after trying other values, the only way back to the saved pattern was a
+    restart, which closes the camera and drops the BLACS link. File > Revert to saved defaults
+    puts the saved pattern back."""
+    rig, win = make()                            # saved: square, x step 10 px
+    win.pattern.xstep.setValue(37)
+    file_menu = win.menuBar().actions()[0].menu()
+    [a for a in file_menu.actions() if a.text() == "Revert to saved defaults"][0].trigger()
+    assert win.pattern.xstep.value() == pytest.approx(10)
+
+
+def test_no_run_button_stands_out_while_blacs_steps_the_raster(make):
+    """Harm stopped: while BLACS stepped the raster, "Take back" was the black highlighted button,
+    the most inviting click on the screen; one click parks a running sequence's stage. No Run
+    button stands out while BLACS holds the raster."""
+    rig, win = make(blacs=True)
+    assert rig.blacs.program("arm_raster", 0)["armed"] == 3
+    pump_until(lambda: win.bar.status()["state"] == "armed")
+    r = win.run
+    buttons = (r.start_btn, r.arm_blacs_btn, r.step_btn, r.stop_btn, r.hand_btn, r.take_back_btn,
+               r.pause_btn, r.continue_btn)
+    assert [b.text() for b in buttons if b.property("kind") == "primary"] == []

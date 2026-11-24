@@ -53,3 +53,20 @@ def test_setup_is_done_only_with_camera_and_a_current_calibration():
     assert progress_notes(True, "stale", 48, "off")[0][0] is False
     assert progress_notes(False, "loaded", 48, "off")[0][0] is False
     assert progress_notes(True, "loaded", 48, "armed")[1:] == [(True, "48 points"), (False, "Armed for BLACS")]
+
+
+def test_live_box_and_button_borders_stand_out_in_both_themes():
+    """Harm stopped: box and button borders at 1.7:1 in the light theme (1.5:1 in dark), so an
+    editable box looked like plain text. Every live border is at least 3:1 against the box fill,
+    the panel and the ground, in both themes (WCAG 2.2, 1.4.11 non-text contrast)."""
+    import theme
+
+    def lum(h):
+        c = [int(h[i:i + 2], 16) / 255 for i in (1, 3, 5)]
+        c = [x / 12.92 if x <= 0.03928 else ((x + 0.055) / 1.055) ** 2.4 for x in c]
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+    for tokens in (theme.DARK, theme.LIGHT):
+        for fill in ("well", "panel", "ground"):
+            hi, lo = sorted((lum(tokens["edge"]), lum(tokens[fill])), reverse=True)
+            assert (hi + 0.05) / (lo + 0.05) >= 3.0, (tokens["edge"], tokens[fill])

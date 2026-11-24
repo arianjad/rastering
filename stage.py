@@ -72,6 +72,7 @@ class Result:
     px: Optional[XY] = None        # a move in px: the point it was sent to [px]
     value: Optional[float] = None  # backlash [mm]
     warning: str = ""
+    red: bool = False              # the warning is red (hardware harm or a shot on an unrecorded spot)
 
 
 @dataclass(frozen=True)
@@ -346,7 +347,7 @@ class Stage:
         self._set_position(mm, cmd.px)
         if not cmd.quiet:
             self._log("info", f"{cmd.label}: done, motor ({mm[0]:.4f}, {mm[1]:.4f}) mm")
-        return Result(True, mm=mm, px=cmd.px, warning=warning)
+        return Result(True, mm=mm, px=cmd.px, warning=warning, red=bool(warning) and red)
 
     def _admit(self, cmd: Command):
         """The one admission check: (target [mm] or None for a home, warning words, red), or a

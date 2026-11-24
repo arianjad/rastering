@@ -17,6 +17,7 @@ from __future__ import annotations
 #   ground  window ground          panel  raised panels       well  inputs, camera surround
 #   ink     text                   label  secondary text      dim   disabled text
 #   rule    1 px separators        hover  pointer-over fill
+#   edge    border of a live box or button (3:1 against its fill and the panel, WCAG 1.4.11)
 #   spot    where the stage is now (image crosshair AND position readout)
 #   path    the pattern (dots on the image AND the Pattern step)
 #   auto    the stage moves without you (laser-sign yellow); on_auto = text on it
@@ -29,6 +30,7 @@ DARK = {
     "label": "#9C978F",
     "dim": "#5F5C57",
     "rule": "#33373D",
+    "edge": "#77736C",
     "hover": "#2A2E34",
     "spot": "#FF4FA3",
     "path": "#4CC3FF",
@@ -46,6 +48,7 @@ LIGHT = {
     "label": "#5B5750",
     "dim": "#A29E97",
     "rule": "#C8C4BD",
+    "edge": "#857F77",
     "hover": "#ECEAE5",
     "spot": "#C0186E",
     "path": "#0B6E9E",
@@ -191,7 +194,7 @@ QGroupBox::title {{
 
 QPushButton, QToolButton {{
     background: {t['panel']}; color: {t['ink']};
-    border: 1px solid {t['rule']}; border-radius: 3px;
+    border: 1px solid {t['edge']}; border-radius: 3px;
     padding: 5px 12px; min-height: 18px;
 }}
 QPushButton:hover, QToolButton:hover {{ background: {t['hover']}; border-color: {t['label']}; }}
@@ -210,13 +213,13 @@ QPushButton[kind="primary"]:disabled {{ background: {t['ground']}; color: {t['di
 
 QAbstractSpinBox, QLineEdit, QComboBox {{
     background: {t['well']}; color: {t['ink']};
-    border: 1px solid {t['rule']}; border-radius: 3px;
+    border: 1px solid {t['edge']}; border-radius: 3px;
     padding: 4px 6px; min-height: 18px;
     selection-background-color: {t['path']}; selection-color: {t['well']};
 }}
 QAbstractSpinBox:hover, QLineEdit:hover, QComboBox:hover {{ border-color: {t['label']}; }}
 QAbstractSpinBox:focus, QLineEdit:focus, QComboBox:focus {{ border: 2px solid {t['ink']}; padding: 3px 5px; }}
-QAbstractSpinBox:disabled, QLineEdit:disabled, QComboBox:disabled {{ color: {t['dim']}; background: {t['ground']}; }}
+QAbstractSpinBox:disabled, QLineEdit:disabled, QComboBox:disabled {{ color: {t['dim']}; background: {t['ground']}; border-color: {t['rule']}; }}
 QComboBox QAbstractItemView {{
     background: {t['panel']}; border: 1px solid {t['rule']};
     selection-background-color: {t['hover']}; selection-color: {t['ink']}; outline: none;
@@ -227,7 +230,7 @@ QCheckBox:disabled {{ color: {t['dim']}; }}
 *[role="rule"] {{ background: {t['rule']}; border: none; }}
 
 QSlider {{ min-height: 22px; }}
-QSlider::groove:horizontal {{ height: 4px; background: {t['well']}; border: 1px solid {t['rule']}; border-radius: 2px; }}
+QSlider::groove:horizontal {{ height: 4px; background: {t['well']}; border: 1px solid {t['edge']}; border-radius: 2px; }}
 QSlider::sub-page:horizontal {{ background: {t['label']}; border-radius: 2px; }}
 QSlider::handle:horizontal {{
     background: {t['label']}; width: 14px; height: 14px; margin: -6px 0px; border-radius: 7px;
@@ -238,10 +241,10 @@ QSlider::handle:horizontal:disabled {{ background: {t['dim']}; }}
 
 QScrollArea {{ border: none; background: transparent; }}
 QScrollBar:vertical {{ background: transparent; width: 10px; margin: 0px; }}
-QScrollBar::handle:vertical {{ background: {t['rule']}; min-height: 28px; border-radius: 4px; margin: 1px; }}
+QScrollBar::handle:vertical {{ background: {t['edge']}; min-height: 28px; border-radius: 4px; margin: 1px; }}
 QScrollBar::handle:vertical:hover {{ background: {t['label']}; }}
 QScrollBar:horizontal {{ background: transparent; height: 10px; margin: 0px; }}
-QScrollBar::handle:horizontal {{ background: {t['rule']}; min-width: 28px; border-radius: 4px; margin: 1px; }}
+QScrollBar::handle:horizontal {{ background: {t['edge']}; min-width: 28px; border-radius: 4px; margin: 1px; }}
 QScrollBar::add-line, QScrollBar::sub-line {{ width: 0px; height: 0px; }}
 QScrollBar::add-page, QScrollBar::sub-page {{ background: transparent; }}
 
