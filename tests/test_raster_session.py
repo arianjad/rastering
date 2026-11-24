@@ -157,3 +157,20 @@ def test_a_motor_failure_halts_a_continuous_run_with_its_words(gui):
                            for k, t in gui.messages))
     assert gui.ctl.raster_snapshot().state == "off"
     assert gui.moves() == []
+
+
+def test_a_continuous_runs_delay_does_not_hold_up_the_stage_queue(gui):
+    """Harm stopped: in a continuous run's delay between points the motor thread slept, so every
+    other request waited out the delay: the window's moves, and BLACS's x, y (with a delay of
+    10 s or more BLACS heard "busy, still queued", and the move ran after Stop). In the delay a
+    move is answered at once (refused: the run holds the stage); the next point still comes
+    after the delay."""
+    gui.plan(continuous=True, delay_s=0.4)
+    assert gui.ctl.arm().ok
+    wait_until(lambda: gui.moves("X") == [1.0])
+    t0 = time.monotonic()
+    res = gui.ctl.move_mm(5.0, 5.0).result(1)
+    assert res.code == "raster_running" and time.monotonic() - t0 < 0.2
+    wait_until(lambda: gui.moves("X") == [1.0, 1.1])
+    assert time.monotonic() - t0 > 0.25
+    gui.ctl.stop_raster()

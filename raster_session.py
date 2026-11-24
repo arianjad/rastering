@@ -37,7 +37,9 @@ class RasterPlan:
 
 @dataclass(frozen=True)
 class RasterSnapshot:
-    """The raster as it is now; the window draws from this alone."""
+    """The raster at one moment. The controller sends one on raster_changed after it lets go of
+    its lock, so two can arrive out of order: a slot draws from controller.raster_snapshot()
+    (the window does), or ignores a snapshot whose seq is below the last one it drew."""
     state: str = OFF
     path: Tuple[XY, ...] = ()          # the armed path [px], the way back included with ping-pong
     pattern_len: int = 0               # points in one pass (before the ping-pong copy)
@@ -49,6 +51,7 @@ class RasterSnapshot:
     pending_plan: Optional[RasterPlan] = None
     path_edited: bool = False          # armed, and the Run tab's plan is not the armed one
     run: int = 0                       # counts arms; a queued raster point belongs to one run
+    seq: int = 0                       # counts snapshots: a higher seq was taken later
 
 
 class RasterSession:
@@ -56,6 +59,7 @@ class RasterSession:
         self.pending: Optional[RasterPlan] = None
         self.shots_per_step = 1
         self.run = 0
+        self._seq = 0
         self._clear()
 
     def _clear(self) -> None:
@@ -125,12 +129,13 @@ class RasterSession:
         return was
 
     def snapshot(self) -> RasterSnapshot:
+        self._seq += 1
         return RasterSnapshot(
             state=self.state, path=self.path, pattern_len=self.pattern_len, dropped=self.dropped,
             point_index=self.cursor, selected_index=self.selected, shots_per_step=self.shots_per_step,
             armed_plan=self.plan, pending_plan=self.pending,
             path_edited=self.state != OFF and self.pending is not None and self.pending != self.plan,
-            run=self.run)
+            run=self.run, seq=self._seq)
 
 
 def _step_refusal(by: str, state: str) -> Tuple[str, str]:

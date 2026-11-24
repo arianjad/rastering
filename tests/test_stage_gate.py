@@ -8,7 +8,10 @@ import time
 
 import numpy as np
 import pytest
+from PyQt5.QtCore import Qt
 
+import raster_controller as rc
+from config import HardwareConfig
 from rig import TRAVEL, Rig, wait_until
 from raster_paths import RasterSpec, points_from_spec
 from stage import out_of_bounds_message
@@ -188,3 +191,118 @@ def test_the_window_learns_where_the_stage_is_without_asking(gui):
     time.sleep(0.25)                                  # another idle read, no change
     assert len(gui.positions) == n + 1
     assert np.allclose(gui.ctl.position.px, (250.0, 300.0))
+
+
+def test_go_to_point_moves_the_stage_to_that_point_of_the_armed_path(gui):
+    """Harm stopped: Go to point is refused by the stage's own check (taken for a foreign move
+    while the raster is held at the GUI) or goes to another point, so the operator cannot re-aim
+    at a missed spot. It moves the stage to that point; the next step continues after it."""
+    gui.plan()
+    assert gui.ctl.arm().ok
+    assert gui.ctl.go_to_point(1).ok
+    gui.idle()
+    assert gui.calls[-2:] == [("X", "move", pytest.approx(1.1)), ("Y", "move", 2.0)]
+    assert gui.refusals() == []
+    assert gui.ctl.step().ok
+    gui.idle()
+    assert gui.moves("X")[-1] == pytest.approx(1.2)
+
+
+def test_a_one_axis_move_and_user_home_x_leave_the_other_axis_alone(gui):
+    """Harm stopped: Move X (or User home X) also sends Y somewhere (its stale reading, or the user
+    home's Y), moving the spot along a direction the operator did not ask for. Only the named
+    axis gets a command."""
+    gui.ctl.set_user_home("X", 4.0)
+    gui.ctl.set_user_home("Y", 7.0)
+    assert gui.ctl.move_axis_mm("X", 5.0).result(2).ok
+    assert gui.ctl.go_user_home("X").result(2).ok
+    assert gui.ctl.move_axis_mm("Y", 6.0).result(2).ok
+    assert [c for c in gui.calls if c[1] == "move"] == [("X", "move", 5.0), ("X", "move", 4.0), ("Y", "move", 6.0)]
+    assert (gui.x.pos, gui.y.pos) == (4.0, 6.0)
+
+
+def test_a_raster_point_queued_before_a_re_arm_does_not_move_the_stage(gui):
+    """Harm stopped: after the operator arms again (a new pattern), a point of the old raster still
+    queued behind a slow move runs anyway: the stage visits a spot of a path that is no longer
+    armed. Points of the old arm are dropped; the new arm's first step moves."""
+    gui.plan()
+    gui.ctl.arm()
+    gui.x.gate = threading.Event()
+    gui.ctl.step()
+    assert gui.x.moving.wait(2)                  # the old arm's first point is moving, slowly
+    gui.ctl.step()                               # its second point waits in the queue
+    gui.plan(RasterSpec(kind="square_x", bounds=(300.0, 320.0, 400.0, 400.0), xstep=10.0, ystep=10.0))
+    assert gui.ctl.arm().ok
+    assert gui.ctl.step().ok                     # the new arm's first point: 300 px -> 3.0 mm
+    gui.x.gate.set()
+    gui.idle()
+    assert gui.moves("X") == [1.0, 3.0]
+    assert any("dropped: the raster was stopped or armed again" in t for t in gui.refusals())
+
+
+def test_a_job_cancelled_while_queued_does_not_stop_the_motor_thread(gui):
+    """Harm stopped: a stage job whose Future was cancelled while it waited in the queue killed the
+    motor thread: every later move (window and BLACS) waited forever, the window showed the stage
+    busy for good and the KCubes were never disconnected. The cancelled job is skipped; later
+    jobs run; the stage reports idle again."""
+    busy = []
+    gui.ctl.busy_changed.connect(busy.append, Qt.DirectConnection)
+    gui.x.gate = threading.Event()
+    first = gui.ctl.move_mm(2.0, 2.0)
+    assert gui.x.moving.wait(2)
+    assert gui.ctl.move_mm(4.0, 4.0).cancel()
+    gui.x.gate.set()
+    assert first.result(2).ok
+    assert gui.ctl.move_mm(3.0, 3.0).result(2).ok
+    assert gui.moves() == [2.0, 2.0, 3.0, 3.0]
+    wait_until(lambda: busy[-1] is False)
+
+
+def test_close_drops_queued_jobs_lets_the_move_in_flight_end_then_disconnects(tmp_path):
+    """Harm stopped: closing the GUI ran every queued move first (the stage kept moving after the
+    window was gone, a 30 s device home included), or left the KCubes connected (the next start
+    cannot open them). Queued jobs are refused ("the GUI is closing") and never run; the move in
+    flight finishes; then both motors are disconnected."""
+    g = Rig(tmp_path)
+    try:
+        g.x.gate = threading.Event()
+        first = g.ctl.move_mm(3.0, 3.0)
+        assert g.x.moving.wait(2)
+        queued = [g.ctl.move_mm(5.0, 5.0), g.ctl.home("Y")]
+        closing = threading.Thread(target=g.ctl.close)
+        closing.start()
+        time.sleep(0.05)
+        assert closing.is_alive()                      # it waits for the move in flight
+        g.x.gate.set()
+        closing.join(2)
+        assert first.result(0).ok
+        for f in queued:
+            res = f.result(0)
+            assert not res.ok and "the GUI is closing" in res.words
+        assert g.moves() == [3.0, 3.0] and ("Y", "home") not in g.calls
+        assert g.calls[-2:] == [("X", "disconnect"), ("Y", "disconnect")]
+    finally:
+        g.close()
+
+
+def test_close_waits_for_the_job_in_flight_as_long_as_it_may_take_then_says_so(tmp_path):
+    """Harm stopped: closing during a device home (up to 30 s) gave up after a fixed 2 s and the
+    process exited with the KCubes still connected and nothing said. The close waits as long as
+    one stage job may take by the KCube's own time limits (a home, or a move of both axes), and
+    when even that runs out it says the motors were not disconnected."""
+    g = Rig(tmp_path)
+    try:
+        g.ctl.close_wait_s = 0.2                       # the test's stand-in for the home's 30 s
+        g.x.gate = threading.Event()
+        g.ctl.move_mm(3.0, 3.0)
+        assert g.x.moving.wait(2)
+        t0 = time.monotonic()
+        g.ctl.close()
+        assert 0.15 < time.monotonic() - t0 < 1.0
+        assert any(k == "error" and "without disconnecting the motors" in t for k, t in g.messages)
+        assert ("X", "disconnect") not in g.calls
+        g.x.gate.set()
+        wait_until(lambda: ("Y", "disconnect") in g.calls)   # once the move ends, it still disconnects
+    finally:
+        g.close()
+    assert rc.longest_stage_job_s(HardwareConfig(move_timeout_s=10.0, home_timeout_s=30.0)) >= 30.0

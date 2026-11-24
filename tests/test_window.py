@@ -223,3 +223,27 @@ def test_jog_up_moves_the_spot_up_on_the_screen(make):
     win.jog.arrow_buttons[(0, 1)].click()
     rig.idle()
     assert rig.moves() == [pytest.approx(before[0]), pytest.approx(before[1] - 0.05)]
+
+
+def test_a_blacs_link_that_did_not_start_is_shown_when_the_window_opens(tmp_path, monkeypatch):
+    """Harm stopped: the BLACS link fails to start (its port taken, e.g. by another copy of this
+    GUI) before the window exists, so the one message saying so went nowhere and the operator
+    learnt it only when BLACS's shots failed. The window shows the link's words when it opens.
+    The port is never bound: the socket maker is replaced by one that fails."""
+    import raster_controller as rc
+
+    def port_taken(*_args, **_kwargs):
+        raise OSError("Address in use")
+
+    monkeypatch.setattr(rc, "ZmqRepTransport", port_taken)
+    rig = Rig(tmp_path)
+    rig.ctl.start_menu_server()
+    pump_until(lambda: rig.ctl.blacs_link_status[0] == "error")
+    cam = ThorCameraThread(CAM, camera_class=SimCamera)
+    win = RasterWindow(rig.ctl, cam, camera_config=CAM, geometry=GEOM, log_dir=str(tmp_path / "logs"),
+                       defaults_path=str(tmp_path / "settings_defaults.json"))
+    try:
+        assert any("BLACS link not started, port 55535: Address in use" in line for line in win.log.lines())
+    finally:
+        win.close()
+        rig.close()

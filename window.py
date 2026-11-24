@@ -157,6 +157,9 @@ class RasterWindow(QtWidgets.QMainWindow):
         self._build()
         self._build_menus()
         self._connect()
+        link_kind, link_words = controller.blacs_link_status   # news sent before this window existed
+        if link_words:
+            self.log.add(link_words, error=link_kind != "info")
         self.camera_panel.set_geometry(geometry)
         self.camera_panel.set_settings_file(camera_file)
         self.view.set_geometry(geometry)

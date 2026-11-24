@@ -10,10 +10,12 @@ from __future__ import annotations
 
 import dataclasses
 import threading
+import time
 
 import pytest
 from bbx_zmq import Refused
 
+import raster_controller as rc
 from rig import MENU, PATH, Rig, wait_until
 
 XY_WORDS = ("so a move to x, y would leave its path: stop the raster with the GUI's Stop button first, "
@@ -226,3 +228,52 @@ def test_shots_per_step_is_held_by_the_gui_and_reported(gui):
     for bad in (0, 2.5):
         with pytest.raises(Refused, match=r"\[out_of_range\]"):
             gui.client.set("shots_per_step", bad)
+
+
+def test_blacs_xy_in_a_continuous_runs_delay_is_refused_at_once_and_never_runs(gui):
+    """Harm stopped: BLACS's x, y during a continuous run with a long delay between points waited
+    out the delay (10 s or more: BLACS heard "busy, still queued and will run", and the move did
+    run once the operator pressed Stop: the spot jumped off the path). It is refused at once
+    with raster_running, and nothing moves after Stop."""
+    gui.plan(continuous=True, delay_s=5.0)
+    assert gui.ctl.arm().ok
+    wait_until(lambda: gui.moves("X") == [1.0])
+    t0 = time.monotonic()
+    with pytest.raises(Refused) as e:
+        gui.client.set("xy", [500.0, 600.0])
+    assert e.value.code == "raster_running" and time.monotonic() - t0 < 1.0
+    gui.ctl.stop_raster()
+    gui.idle()
+    assert gui.moves() == [1.0, 2.0]
+
+
+def test_blacs_hears_move_refused_for_a_motor_failure_and_for_a_dropped_point(gui):
+    """Harm stopped: BLACS got codes outside the ones its menu lists for a move that did not
+    happen (motor_error for a failing KCube, raster_stopped for a point dropped by the GUI's
+    Stop), so its tab cannot tell them from a fault in the link. Both answer move_refused, with
+    the GUI's words saying what happened, and nothing moves."""
+    gui.x.fail = "KCube X lost"
+    with pytest.raises(Refused) as e:
+        gui.client.set("xy", [500.0, 600.0])
+    assert e.value.code == "move_refused" and "failed: KCube X lost" in e.value.words
+    gui.x.fail = None
+    gui.client.press("arm")
+    hold = threading.Event()                       # the motor thread is busy with another job
+    gui.ctl._stage.submit(rc.Command("test: hold", "read", quiet=True, then=lambda _: hold.wait(5)))
+    answer = {}
+
+    def press():
+        try:
+            answer["ok"] = gui.client.press("next_point")
+        except Refused as r:
+            answer["refused"] = r
+
+    t = threading.Thread(target=press)
+    t.start()
+    wait_until(lambda: gui.ctl.raster_snapshot().point_index == 0)   # BLACS's point is queued
+    gui.ctl.stop_raster()                                            # the GUI's Stop
+    hold.set()
+    t.join(5)
+    assert answer["refused"].code == "move_refused"
+    assert "dropped: the raster was stopped" in answer["refused"].words
+    assert gui.moves() == []

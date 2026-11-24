@@ -26,7 +26,7 @@ from PyQt5.QtCore import QObject, pyqtSignal
 from calibration import (LAST_CALIBRATION_POINTER, AffineCalibration, CalibrationFile, fit_affine,
                          last_calibration_path, read_calibration_file, remember_calibration_path,
                          write_calibration_file)
-from config import APP_CONFIG, AppConfig
+from config import APP_CONFIG, AppConfig, HardwareConfig
 from raster_paths import points_from_spec
 from raster_session import BLACS, GUI, RUN, RasterPlan, RasterSession, RasterSnapshot
 from stage import Command, Result, Stage, StagePosition
@@ -34,6 +34,7 @@ from stage import Command, Result, Stage, StagePosition
 XY = Tuple[float, float]
 HERE = os.path.dirname(os.path.abspath(__file__))
 _MENU_POLL_MS = 50   # the BLACS link checks for a request this often, and for its stop
+_SAVE_ERRORS = (OSError, TypeError, ValueError)   # a calibration file not written (the old one stays)
 
 
 @dataclass
@@ -44,6 +45,12 @@ class _Clicks:
     px: List[XY] = field(default_factory=list)
     mm: List[XY] = field(default_factory=list)
     asked: int = 0
+
+
+def longest_stage_job_s(hw: HardwareConfig) -> float:
+    """The longest one stage job can take before its KCube gives up [s]: a device home, or a move
+    of both axes one after the other; plus 2 s to stop and read back."""
+    return max(hw.home_timeout_s, 2 * hw.move_timeout_s) + 2.0
 
 
 def _axis(axis: str) -> str:
@@ -66,25 +73,29 @@ class SystemController(QObject):
     message = pyqtSignal(str, str)                # kind ("info", "refused", "error"), text
     position_changed = pyqtSignal(object)         # StagePosition
     busy_changed = pyqtSignal(bool)               # the motor thread has stage jobs
-    raster_changed = pyqtSignal(object)           # RasterSnapshot
+    raster_changed = pyqtSignal(object)           # RasterSnapshot (can arrive out of order: see its seq)
     calibration_changed = pyqtSignal(object)      # CalibrationFile, or None: no calibration
     calibration_progress = pyqtSignal(int, int)   # spots recorded, spots needed; (0, 0): not calibrating
     backlash_changed = pyqtSignal(str, float)     # axis, what the motor reports [mm]
     user_home_changed = pyqtSignal(float, float)  # [mm]
 
     def __init__(self, motor_x, motor_y, *, travel_mm, calibration_path: str,
-                 pointer_path: str = LAST_CALIBRATION_POINTER, parent: Optional[QObject] = None):
+                 pointer_path: str = LAST_CALIBRATION_POINTER,
+                 close_wait_s: float = longest_stage_job_s(APP_CONFIG.hardware),
+                 parent: Optional[QObject] = None):
         super().__init__(parent)
         self.calibration_path = calibration_path   # every calibration fit is saved here
+        self.close_wait_s = close_wait_s           # close() waits this long for the stage job in flight [s]
         self._pointer_path = pointer_path
         self._lock = threading.RLock()
         self._session = RasterSession()
-        self._run_ended = threading.Event()        # set when the continuous run (if any) ends
+        self._run_timer: Optional[threading.Timer] = None   # a continuous run's delay before its next point
         self._cal_file: Optional[CalibrationFile] = None
         self._clicks: Optional[_Clicks] = None
         self._user_home: XY = (0.0, 0.0)
         self._menu_thread: Optional[threading.Thread] = None
         self._menu_stop = threading.Event()
+        self._link_status: Tuple[str, str] = ("", "")
         self._stage = Stage(motor_x, motor_y, travel_mm, raster_state=self._raster_state,
                             on_log=self.message.emit, on_position=self.position_changed.emit,
                             on_backlash=self.backlash_changed.emit, on_busy=self.busy_changed.emit)
@@ -124,6 +135,15 @@ class SystemController(QObject):
         with self._lock:
             c = self._clicks
             return (len(c.px), c.required) if c is not None else (0, 0)
+
+    @property
+    def blacs_link_status(self) -> Tuple[str, str]:
+        """(kind, words) of the BLACS link's latest news, also sent on `message`: kind "info"
+        (serving on its port) or "error" (not started, or its socket keeps failing); ("", "")
+        before it serves on a port. The link starts before the window exists, so the window shows
+        this when it opens."""
+        with self._lock:
+            return self._link_status
 
     def reachable(self, points_px: Sequence[XY]) -> List[bool]:
         """For each image point [px]: can the stage go there (calibrated and inside the travel)?"""
@@ -250,8 +270,7 @@ class SystemController(QObject):
         try:
             with self._lock:
                 was_running = self._session.hand_to_blacs()
-                if was_running:
-                    self._run_ended.set()
+                self._cancel_run_timer_locked()
                 snap = self._session.snapshot()
         except Refused as r:
             return self._refused(r)
@@ -275,7 +294,7 @@ class SystemController(QObject):
         """End the raster (any state); queued raster points are dropped."""
         with self._lock:
             was = self._session.stop()
-            self._run_ended.set()
+            self._cancel_run_timer_locked()
             snap = self._session.snapshot()
         if was:
             self.raster_changed.emit(snap)
@@ -390,8 +409,9 @@ class SystemController(QObject):
                 try:
                     cal = write_calibration_file(path, cal)
                     self._cal_file = cal
-                except OSError as e:
-                    refusal = Refused("save_failed", f"calibration not saved to {path}: {e}")
+                except _SAVE_ERRORS as e:
+                    refusal = Refused("save_failed", f"calibration not saved to {path} (the file there is "
+                                                     f"unchanged): {e}")
         if refusal is not None:
             return self._refused(refusal)
         self._remember(cal.path)
@@ -420,10 +440,11 @@ class SystemController(QObject):
         self._menu_thread.start()
 
     def close(self) -> None:
-        """Stop the raster and the BLACS link, finish the queued stage jobs, disconnect the motors."""
+        """Stop the raster and the BLACS link, drop the queued stage jobs, let the one in flight
+        end (up to close_wait_s), disconnect the motors."""
         self._menu_stop.set()
         self.stop_raster()
-        self._stage.close()
+        self._stage.close(self.close_wait_s)
         if self._menu_thread is not None:
             self._menu_thread.join(1.0)
 
@@ -456,8 +477,7 @@ class SystemController(QObject):
                                                   "move the pattern toward the reachable part of the frame, or recalibrate")
         state = ARMED if (for_blacs or s.state == ARMED) else RUNNING if plan.continuous else LOCAL
         s.arm(plan, kept, dropped=len(pts) - len(kept), state=state)
-        self._run_ended.set()                     # a continuous run of the old arm stops waiting
-        self._run_ended = threading.Event()
+        self._cancel_run_timer_locked()           # a continuous run of the old arm takes no more steps
         if state == RUNNING:
             self._queue_run_point_locked()
         how = {LOCAL: "step it at the GUI", ARMED: "BLACS steps it", RUNNING: "running"}[state]
@@ -483,32 +503,48 @@ class SystemController(QObject):
         """Queue the continuous run's next point (caller holds the lock). Returns wrapped."""
         s = self._session
         i, pt, wrapped = s.next_point(RUN)
-        run, ended, delay = s.run, self._run_ended, s.plan.delay_s
+        run = s.run
         self._stage.submit(Command(f"Raster point {i + 1}/{len(s.path)}", "move", px=pt, raster_run=run,
-                                   quiet=True, then=lambda res: self._after_run_point(res, run, ended, delay)))
+                                   quiet=True, then=lambda res: self._after_run_point(res, run)))
         return wrapped
 
-    def _after_run_point(self, res: Result, run: int, ended: threading.Event, delay_s: float) -> None:
-        """Motor thread, after a continuous run's point: wait the delay, then queue the next one."""
-        if not res.ok:
-            with self._lock:
-                halt = self._session.state == RUNNING and self._session.run == run
-                if halt:
-                    self._session.stop()
-                    self._run_ended.set()
-                snap = self._session.snapshot()
-            if halt:
-                self.raster_changed.emit(snap)
-                self.message.emit("error", f"Raster halted: {res.words}")
+    def _after_run_point(self, res: Result, run: int) -> None:
+        """Motor thread, after a continuous run's point: halt on a failure; else queue the next
+        point now or, after the plan's delay, from a timer (the motor thread never waits)."""
+        with self._lock:
+            s = self._session
+            if s.state != RUNNING or s.run != run:
+                return
+            halted = not res.ok
+            if halted:
+                s.stop()
+                snap = s.snapshot()
+            elif s.plan.delay_s > 0:
+                self._run_timer = threading.Timer(s.plan.delay_s, self._continue_run, args=(run,))
+                self._run_timer.daemon = True
+                self._run_timer.start()
+                return
+        if halted:
+            self.raster_changed.emit(snap)
+            self.message.emit("error", f"Raster halted: {res.words}")
             return
-        if delay_s > 0:
-            ended.wait(delay_s)
+        self._continue_run(run)
+
+    def _continue_run(self, run: int) -> None:
+        """Queue the continuous run's next point, unless the run was stopped, handed to BLACS or
+        armed again meanwhile."""
         with self._lock:
             if self._session.state != RUNNING or self._session.run != run:
                 return
+            self._run_timer = None
             wrapped = self._queue_run_point_locked()
             snap = self._session.snapshot()
         self._stepped(snap, wrapped, "")
+
+    def _cancel_run_timer_locked(self) -> None:
+        timer, self._run_timer = self._run_timer, None
+        if timer is not None:
+            timer.cancel()
 
     def _pair_click(self, clicks: _Clicks, px: XY, res: Result) -> None:
         """Motor thread: pair a calibration click with the stage position; fit when complete."""
@@ -554,8 +590,9 @@ class SystemController(QObject):
                 if save_to is not None and cal is not None:
                     try:
                         cal = write_calibration_file(save_to, cal)
-                    except OSError as e:
-                        self.message.emit("error", f"Calibration not saved to {save_to}: {e}")
+                    except _SAVE_ERRORS as e:
+                        self.message.emit("error", f"Calibration in use but not saved to {save_to} (the file "
+                                                   f"there is unchanged): {e}. Save it with Save calibration.")
                 self._cal_file = cal
                 self._stage.set_calibration(cal.affine if cal is not None else None)
                 if cal is not None and cal.user_home_mm is not None:
@@ -585,9 +622,9 @@ class SystemController(QObject):
             try:
                 transport = ZmqRepTransport(f"tcp://*:{MENU.port}", recv_timeout_ms=_MENU_POLL_MS)
             except Exception as e:   # port taken, no pyzmq: the GUI runs without BLACS
-                self.message.emit("error", f"BLACS link not started, port {MENU.port}: {e}")
+                self._link_news("error", f"BLACS link not started, port {MENU.port}: {e}")
                 return
-            self.message.emit("info", f"BLACS link: menu {MENU.name} v{MENU.version} on port {MENU.port}.")
+            self._link_news("info", f"BLACS link: menu {MENU.name} v{MENU.version} on port {MENU.port}.")
         server = RasterMenuLink(self).menu_server(transport)
         failures = 0
         while not self._menu_stop.is_set():
@@ -598,10 +635,15 @@ class SystemController(QObject):
                 traceback.print_exc()
                 failures += 1
                 if failures == 3:
-                    self.message.emit("error", "BLACS link: the socket keeps failing; see the console.")
+                    self._link_news("error", "BLACS link: the socket keeps failing; see the console.")
                 if failures >= 3:
                     self._menu_stop.wait(0.25)
         transport.close()
+
+    def _link_news(self, kind: str, words: str) -> None:
+        with self._lock:
+            self._link_status = (kind, words)
+        self.message.emit(kind, words)
 
 
 class RasterMenuLink:
@@ -692,11 +734,15 @@ def create_controller(cfg: AppConfig = APP_CONFIG) -> SystemController:
         try:
             motor_y = KCube(hw.serial_y, "Y", hw)
         except Exception:
-            motor_x.disconnect()
+            try:
+                motor_x.disconnect()
+            except Exception:       # Y's error is the one to show; this one goes to the console
+                traceback.print_exc()
             raise
     path = cfg.paths.calibration_path
     ctl = SystemController(motor_x, motor_y, travel_mm=hw.travel_mm,
-                           calibration_path=path if os.path.isabs(path) else os.path.join(HERE, path))
+                           calibration_path=path if os.path.isabs(path) else os.path.join(HERE, path),
+                           close_wait_s=longest_stage_job_s(hw))
     if cfg.network.blacs_link:
         ctl.start_menu_server()
     return ctl

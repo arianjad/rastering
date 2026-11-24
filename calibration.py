@@ -4,14 +4,16 @@
 
 No Qt. The file is JSON with the keys calibration_matrix, calibration_offset (required) and
 user_home {x, y} [mm], backlash {x, y} [mm], camera_settings (the camera geometry the calibration
-was made with; kept as read and written back untouched), saved_at, notes. A file with only the
-matrix and offset (the older format) reads fine. last_calibration_state.json next to this file
-points at the calibration file used last.
+was made with; kept as read and written back, numpy numbers as plain ones), saved_at, notes. A
+file with only the matrix and offset (the older format) reads fine. last_calibration_state.json
+next to this file points at the calibration file used last. Both files are written whole or not
+at all (a temporary file in the same folder, then renamed over the old one).
 """
 from __future__ import annotations
 
 import json
 import os
+import tempfile
 import time
 from dataclasses import dataclass
 from typing import Any, Dict, Optional, Sequence, Tuple
@@ -23,6 +25,16 @@ XY = Tuple[float, float]
 HERE = os.path.dirname(os.path.abspath(__file__))
 LAST_CALIBRATION_POINTER = os.path.join(HERE, "last_calibration_state.json")
 
+# A fit is refused unless the stage moved at least this far in x and in y between the clicks
+# [mm]: with less, the fit has no information on that axis (a stage moved in x only gave
+# "scale 1.9e-09 mm/px").
+MIN_STAGE_SPAN_MM = 0.010
+# A calibration matrix is refused above this condition number (largest / smallest singular
+# value). Camera pixels are square and the stage axes square to each other, so a real fit is
+# near 1 (the lab's is 1.4; a camera viewing the target at 80 deg would give 6); far above
+# means the stage positions lay (almost) on one line.
+MAX_MATRIX_COND = 10.0
+
 
 class AffineCalibration:
     """motor [mm] = M @ image [px] + b. Read-only once made."""
@@ -30,10 +42,12 @@ class AffineCalibration:
     def __init__(self, M, b):
         self.M = np.array(M, dtype=float).reshape(2, 2)
         self.b = np.array(b, dtype=float).reshape(2)
-        try:
-            self._Minv = np.linalg.inv(self.M)
-        except np.linalg.LinAlgError:
-            raise ValueError("the calibration matrix is singular (the motor positions lie on one line)") from None
+        cond = float(np.linalg.cond(self.M)) if np.all(np.isfinite(self.M)) else float("inf")
+        if not cond <= MAX_MATRIX_COND:
+            raise ValueError(f"the stage positions at the clicks lie (almost) on one line (matrix condition "
+                             f"{cond:.3g}, more than {MAX_MATRIX_COND:g}): move the stage in both x and y "
+                             "between clicks, so the spots form a triangle")
+        self._Minv = np.linalg.inv(self.M)
         for a in (self.M, self.b, self._Minv):
             a.setflags(write=False)
 
@@ -64,6 +78,11 @@ def fit_affine(px_points: Sequence[XY], mm_points: Sequence[XY]) -> Tuple[Affine
     n = len(px_points)
     if n < 3 or len(mm_points) != n:
         raise ValueError(f"need at least 3 spots with a stage position each (have {n})")
+    span = np.ptp(np.asarray(mm_points, dtype=float), axis=0)
+    if span.min() < MIN_STAGE_SPAN_MM:
+        raise ValueError(f"the stage moved only {span[0] * 1000:.1f} um in x and {span[1] * 1000:.1f} um in y "
+                         f"between the clicks: move the stage in both x and y between clicks (at least "
+                         f"{MIN_STAGE_SPAN_MM * 1000:g} um each)")
     A = np.zeros((2 * n, 6))
     rhs = np.zeros(2 * n)
     for i, ((x, y), (mx, my)) in enumerate(zip(px_points, mm_points)):
@@ -117,22 +136,53 @@ def read_calibration_file(path: str) -> CalibrationFile:
 
 
 def write_calibration_file(path: str, cal: CalibrationFile) -> CalibrationFile:
-    """Write `cal` to `path` (stamped now); returns what was written, with its path."""
+    """Write `cal` to `path` (stamped now); returns what was written, with its path. Raises
+    OSError, or TypeError / ValueError for a value JSON cannot hold; the old file then stays."""
     saved_at = time.strftime("%Y-%m-%dT%H:%M:%S")
     uh = cal.user_home_mm
-    bx, by = cal.backlash_mm
+    bx, by = (None if v is None else float(v) for v in cal.backlash_mm)
+    camera = _plain(cal.camera_settings)
     data = {
         **cal.affine.to_json(),
         "user_home": {"x": float(uh[0]), "y": float(uh[1])} if uh is not None else None,
         "backlash": {"x": bx, "y": by},
-        "camera_settings": cal.camera_settings,
+        "camera_settings": camera,
         "saved_at": saved_at,
         "notes": cal.notes,
     }
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2)
-    return CalibrationFile(cal.affine, uh, (bx, by), cal.camera_settings, cal.notes, saved_at,
-                           os.path.abspath(path))
+    _write_json_whole(path, data)
+    return CalibrationFile(cal.affine, uh, (bx, by), camera, cal.notes, saved_at, os.path.abspath(path))
+
+
+def _plain(value: Any) -> Any:
+    """`value` with numpy numbers and arrays (at any depth in dicts, lists, tuples) as Python ones."""
+    if isinstance(value, dict):
+        return {k: _plain(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_plain(v) for v in value]
+    if isinstance(value, np.ndarray):
+        return _plain(value.tolist())
+    if isinstance(value, np.generic):
+        return value.item()
+    return value
+
+
+def _write_json_whole(path: str, data: Any) -> None:
+    """Write `data` as JSON to `path` whole or not at all: the text is made first, written to a
+    temporary file in the same folder, then renamed over `path`."""
+    text = json.dumps(data, indent=2)
+    folder = os.path.dirname(os.path.abspath(path))
+    fd, tmp = tempfile.mkstemp(prefix=os.path.basename(path) + ".", suffix=".tmp", dir=folder)
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def camera_changed(now: Optional[Dict[str, Any]], saved: Optional[Dict[str, Any]]) -> bool:
@@ -163,5 +213,4 @@ def last_calibration_path(pointer: str = LAST_CALIBRATION_POINTER) -> Optional[s
 
 def remember_calibration_path(path: str, pointer: str = LAST_CALIBRATION_POINTER) -> None:
     """Point last_calibration_state.json at `path`. Raises OSError."""
-    with open(pointer, "w") as f:
-        json.dump({"last_calibration_path": os.path.abspath(path)}, f, indent=2)
+    _write_json_whole(pointer, {"last_calibration_path": os.path.abspath(path)})

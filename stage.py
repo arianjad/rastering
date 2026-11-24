@@ -8,12 +8,18 @@ BLACS x, y) is queued here and checked once, on the motor thread, just before it
       the edge).
 A refused move moves nothing; its words go back to the caller (BLACS or the window), which only
 shows them. Only the motor thread calls the motors. When the queue is idle the thread reads the
-position and reports it when it changed.
+position and reports it when it changed. The thread outlives any one job (an error is logged and
+the next job runs); close() drops the queued jobs, lets the one in flight end, then disconnects.
+
+Refusal codes BLACS can see are the menu's: raster_armed / raster_held / raster_running (a raster
+holds the stage), not_calibrated, and move_refused for everything else (outside the travel, a
+motor error, a raster point dropped by Stop or a new arm, the GUI closing); the words say which.
 """
 from __future__ import annotations
 
 import queue
 import threading
+import traceback
 from concurrent.futures import Future
 from dataclasses import dataclass, field
 from typing import Callable, List, Optional, Protocol, Sequence, Tuple
@@ -135,6 +141,7 @@ class Stage:
         self._position: Optional[StagePosition] = None
         self._backlash = {"X": None, "Y": None}
         self._poll_failed = False
+        self._closing = False
         self._queue: "queue.Queue[Optional[Command]]" = queue.Queue()
         self._thread = threading.Thread(target=self._run, name="motor", daemon=True)
         self._thread.start()
@@ -142,7 +149,12 @@ class Stage:
     # --- any thread ---
 
     def submit(self, cmd: Command) -> "Future[Result]":
-        self._queue.put(cmd)
+        """Queue `cmd` for the motor thread. After close() it is refused at once."""
+        with self._lock:
+            if not self._closing:
+                self._queue.put(cmd)
+                return cmd.future
+        self._settle(cmd)
         return cmd.future
 
     @property
@@ -178,10 +190,19 @@ class Stage:
             return [False] * len(points_px)
         return within_travel(cal.px_to_mm_many(points_px), self.travel_mm).tolist()
 
-    def close(self, timeout_s: float = 2.0) -> None:
-        """Finish the queued jobs, disconnect the motors, end the thread."""
-        self._queue.put(None)
+    def close(self, timeout_s: float) -> bool:
+        """Drop the queued jobs (each refused: the GUI is closing), let the job in flight end, then
+        disconnect the motors and end the thread. Waits up to `timeout_s` (the longest one job may
+        take); False, and an error line, when the job in flight had not ended by then."""
+        with self._lock:
+            self._closing = True
+            self._queue.put(None)
         self._thread.join(timeout_s)
+        if self._thread.is_alive():
+            self._log("error", f"The stage job in flight had not ended after {timeout_s:g} s: closing "
+                               "without disconnecting the motors.")
+            return False
+        return True
 
     # --- the motor thread ---
 
@@ -196,24 +217,50 @@ class Stage:
                 continue
             if cmd is None:
                 break
-            if not busy:
-                busy = True
-                self._on_busy(True)
-            result = self._execute(cmd)
-            cmd.future.set_result(result)
-            if cmd.then is not None:
-                try:
-                    cmd.then(result)
-                except Exception as e:
-                    self._log("error", f"{cmd.label}: follow-up failed: {e}")
-            if self._queue.empty():
-                busy = False
-                self._on_busy(False)
+            try:
+                if not busy:
+                    busy = True
+                    self._on_busy(True)
+                self._settle(cmd)
+            except Exception as e:           # never end the thread: later jobs, close, disconnect
+                self._thread_error(cmd, e)
+            try:
+                if busy and self._queue.empty():
+                    busy = False
+                    self._on_busy(False)
+            except Exception as e:
+                self._thread_error(cmd, e)
         for axis, motor in self._motors.items():
             try:
                 motor.disconnect()
             except Exception as e:
                 self._log("error", f"Disconnecting motor {axis} failed: {e}")
+
+    def _settle(self, cmd: Command) -> None:
+        """Run `cmd` (closing: refuse it instead), set its Future, run its follow-up. A Future
+        cancelled while queued is skipped."""
+        if not cmd.future.set_running_or_notify_cancel():
+            if not cmd.quiet:
+                self._log("info", f"{cmd.label}: cancelled before it ran.")
+            return
+        if self._closing:
+            result = Result(False, f"{cmd.label}: not run, the GUI is closing", "move_refused")
+        else:
+            result = self._execute(cmd)
+        cmd.future.set_result(result)
+        if cmd.then is not None:
+            try:
+                cmd.then(result)
+            except Exception as e:
+                self._log("error", f"{cmd.label}: follow-up failed: {e}")
+
+    def _thread_error(self, cmd: Command, e: Exception) -> None:
+        traceback.print_exc()
+        try:
+            self._log("error", f"{cmd.label}: unexpected error on the motor thread ({type(e).__name__}: {e}); "
+                               "the next stage jobs still run.")
+        except Exception:
+            pass
 
     def _poll(self) -> None:
         """Read the position; a failing read is logged once until a read works again."""
@@ -248,7 +295,7 @@ class Stage:
             return Result(True, value=value)
         except Exception as e:
             self._log("error", f"{cmd.label} failed: {e}")
-            return Result(False, words=f"{cmd.label} failed: {e}", code="motor_error")
+            return Result(False, words=f"{cmd.label} failed: {e}", code="move_refused")
 
     def _move(self, cmd: Command) -> Result:
         target = self._admit(cmd)
@@ -275,7 +322,7 @@ class Stage:
         state, run = self._raster_state()
         if cmd.raster_run is not None:
             if state == OFF or run != cmd.raster_run:
-                return Result(False, "dropped: the raster was stopped or armed again", "raster_stopped")
+                return Result(False, "dropped: the raster was stopped or armed again", "move_refused")
         elif state != OFF:
             code, holder = RASTER_HOLDERS[state]
             if cmd.from_blacs:

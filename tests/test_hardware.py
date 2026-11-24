@@ -6,6 +6,7 @@ import dataclasses
 import os
 import sys
 import threading
+import types
 
 import pytest
 
@@ -48,8 +49,9 @@ def test_a_simulated_run_never_loads_pythonnet(tmp_path):
 
 def test_a_kcube_that_fails_to_start_is_an_error_not_a_simulated_motor(monkeypatch, tmp_path):
     """Harm stopped: a disconnected KCube silently becomes a simulated motor; every move then
-    "succeeds" while the real stage never moves. Making the controller fails, and the axis that
-    did start is disconnected again."""
+    "succeeds" while the real stage never moves; or the error shown is the clean-up's (X failing
+    to disconnect), not why Y did not start. Making the controller fails with Y's error, and the
+    axis that did start is disconnected again."""
     started = []
 
     class KCubeStub:
@@ -61,9 +63,100 @@ def test_a_kcube_that_fails_to_start_is_an_error_not_a_simulated_motor(monkeypat
 
         def disconnect(self):
             self.disconnected = True
+            raise RuntimeError("KCube X: USB gone")
 
     monkeypatch.setattr(hardware, "KCube", KCubeStub)
     cfg = dataclasses.replace(config.APP_CONFIG, network=dataclasses.replace(config.APP_CONFIG.network, blacs_link=False))
     with pytest.raises(RuntimeError, match="KCube Y"):
         rc.create_controller(cfg)
     assert [s.disconnected for s in started] == [True]
+
+
+class _Decimal(float):
+    """System.Decimal as Kinesis uses it: made from a float, read back with ToSingle."""
+    @staticmethod
+    def ToSingle(v):
+        return float(v)
+
+
+class _KinesisDevice:
+    """A Kinesis KCubeDCServo: a move ends `move_s` later with the completion callback for its
+    task id, or never (`hang`). Records the calls."""
+
+    def __init__(self, *, move_s=0.05, hang=False):
+        self.Position = _Decimal(1.0)
+        self.move_s, self.hang = move_s, hang
+        self.calls = []
+
+    def MoveTo(self, pos, done):
+        self.calls.append(("MoveTo", float(pos)))
+        task = len(self.calls)
+        if not self.hang:
+            def finish():
+                self.Position = _Decimal(float(pos))
+                done(task)
+            threading.Timer(self.move_s, finish).start()
+        return task
+
+    def StopImmediate(self):
+        self.calls.append(("StopImmediate",))
+
+
+def _kcube(device, move_timeout_s=1.0):
+    """A KCube around a fake Kinesis device, made without __init__: no pythonnet, no DLL, no USB."""
+    k = object.__new__(hardware.KCube)
+    k.name, k.serial_no = "X", "0"
+    k._hw = dataclasses.replace(config.HardwareConfig(), move_timeout_s=move_timeout_s)
+    k._Decimal = _Decimal
+    k._waiter = hardware.TaskWaiter()
+    k._on_done = k._waiter.done
+    k._device = device
+    return k
+
+
+def test_a_kcube_move_returns_when_the_stage_is_there_and_is_stopped_on_timeout():
+    """Harm stopped: a move returns as soon as Kinesis took it (the next shot fires while the stage
+    still moves, and the position read back is the old one), or a move that never reports done
+    is left running when the GUI gives up on it (the stage drifts on under the next shot).
+    move_to returns after the completion callback, at the new position; a move with no callback
+    within the time limit is stopped with StopImmediate and reported."""
+    dev = _KinesisDevice(move_s=0.05)
+    assert _kcube(dev).move_to(3.0) == 3.0
+    assert dev.calls == [("MoveTo", 3.0)]
+    stuck = _KinesisDevice(hang=True)
+    with pytest.raises(TimeoutError, match=r"motor X did not finish the move to 3\.0000 mm within 0\.05 s"):
+        _kcube(stuck, move_timeout_s=0.05).move_to(3.0)
+    assert stuck.calls == [("MoveTo", 3.0), ("StopImmediate",)]
+
+
+def test_a_kcube_start_up_error_is_not_hidden_by_the_clean_up(monkeypatch):
+    """Harm stopped: a KCube that cannot connect (held by another program) and then also fails to
+    disconnect showed only the disconnect error, so the operator chased the wrong fault. The
+    start-up error is raised, naming the KCube. Kinesis is faked and pythonnet blocked: no test
+    can reach a real KCube."""
+    class Device:
+        def Connect(self, serial):
+            raise RuntimeError("device in use by another program")
+
+        def StopPolling(self):
+            raise RuntimeError("stop polling failed")
+
+        def Disconnect(self):
+            raise RuntimeError("disconnect failed")
+
+    monkeypatch.setitem(sys.modules, "clr", None)            # import clr fails: no pythonnet
+    monkeypatch.setattr(hardware, "_load_kinesis", lambda _dir: None)
+    system = types.ModuleType("System")
+    system.Action, system.UInt64, system.Decimal = {int: lambda fn: fn}, int, _Decimal
+    dm = types.ModuleType("Thorlabs.MotionControl.DeviceManagerCLI")
+    dm.DeviceManagerCLI = types.SimpleNamespace(GetDeviceList=lambda: ["00000001"])
+    dc = types.ModuleType("Thorlabs.MotionControl.KCube.DCServoCLI")
+    dc.KCubeDCServo = types.SimpleNamespace(CreateKCubeDCServo=lambda serial: Device())
+    for name, mod in {"System": system, "Thorlabs": types.ModuleType("Thorlabs"),
+                      "Thorlabs.MotionControl": types.ModuleType("Thorlabs.MotionControl"),
+                      "Thorlabs.MotionControl.DeviceManagerCLI": dm,
+                      "Thorlabs.MotionControl.KCube": types.ModuleType("Thorlabs.MotionControl.KCube"),
+                      "Thorlabs.MotionControl.KCube.DCServoCLI": dc}.items():
+        monkeypatch.setitem(sys.modules, name, mod)
+    with pytest.raises(RuntimeError, match=r"KCube X \(00000001\) did not start: device in use by another program"):
+        hardware.KCube("00000001", "X", config.HardwareConfig())

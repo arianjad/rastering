@@ -95,7 +95,10 @@ class KCube:
             motor_config.UpdateCurrentConfiguration()
             self._device.SetSettings(self._device.MotorDeviceSettings, True, False)
         except Exception as e:
-            self.disconnect()
+            try:
+                self.disconnect()
+            except Exception:       # the start-up error below is the one the operator needs
+                pass
             raise RuntimeError(f"KCube {name} ({self.serial_no}) did not start: {e}") from e
 
     def get_position(self) -> float:

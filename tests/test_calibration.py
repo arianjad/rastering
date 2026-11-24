@@ -153,3 +153,118 @@ def test_backlash_shows_what_the_motor_took_and_saving_never_waits_for_the_stage
         assert data["user_home"] == {"x": 0.0, "y": 0.0}
     finally:
         g.close()
+
+
+# A calibration like the lab's (the camera is turned to the stage): image x moves motor y and
+# image y moves motor x. The two scales and the small diagonal terms differ, so a transposed or
+# swapped matrix gives other numbers.
+TURNED_M = [[0.0002, -0.011], [-0.010, -0.0003]]   # [mm/px]
+TURNED_B = [16.0, 13.0]                            # [mm]
+
+
+def test_a_turned_calibration_maps_pixels_to_the_right_motor_axis_and_back():
+    """Harm stopped: px -> mm uses the matrix transposed, or mm -> px leaves out the offset: with
+    the lab's turned camera every spot (and the marker of where the stage is) lands on the wrong
+    axis or millimetres away. The numbers are worked by hand."""
+    cal = AffineCalibration(TURNED_M, TURNED_B)
+    assert cal.px_to_mm(100.0, 300.0) == pytest.approx((12.72, 11.91))
+    assert cal.px_to_mm(500.0, 200.0) == pytest.approx((13.9, 7.94))
+    assert np.allclose(cal.px_to_mm_many([(100.0, 300.0), (500.0, 200.0)]), [(12.72, 11.91), (13.9, 7.94)])
+    assert cal.mm_to_px(12.72, 11.91) == pytest.approx((100.0, 300.0))
+
+
+def test_three_clicks_with_the_turned_camera_fit_a_calibration_that_lands_on_the_spot(tmp_path):
+    """Harm stopped: the fit puts its x and y rows the wrong way round, which a camera lined up
+    with the stage cannot show: with the lab's turned camera every px move then lands
+    millimetres off. Clicks made with M = [[0, -0.011], [-0.010, 0]] mm/px, b = (16, 13) mm give
+    that calibration back, and a px move lands where it says (worked by hand)."""
+    g = Rig(tmp_path, calibrated=False)
+    try:
+        _click_three_spots(g, [((10.5, 10.0), (300.0, 500.0)), ((10.5, 7.0), (600.0, 500.0)),
+                               ((6.1, 10.0), (300.0, 900.0))])
+        wait_until(lambda: g.cals and g.cals[-1] is not None)
+        cal = g.cals[-1].affine
+        assert np.allclose(cal.M, [[0.0, -0.011], [-0.010, 0.0]]) and np.allclose(cal.b, [16.0, 13.0])
+        assert g.ctl.move_px(450.0, 700.0).result(2).ok
+        assert (g.x.pos, g.y.pos) == pytest.approx((8.3, 8.5))
+    finally:
+        g.close()
+
+
+@pytest.mark.parametrize("stage_mm", [
+    [(1.0, 5.0), (3.0, 5.0), (5.0, 5.0)],      # the stage moved in x only
+    [(5.0, 5.0), (5.0, 5.0), (5.0, 5.0)],      # the stage did not move
+    [(1.0, 1.0), (2.0, 2.0), (3.0, 3.0)],      # the stage moved along one line
+], ids=["x only", "not moved", "one line"])
+def test_clicks_without_a_stage_move_in_both_x_and_y_are_refused_and_save_nothing(tmp_path, stage_mm):
+    """Harm stopped: three clicks with the stage moved along one axis only (or not at all) gave
+    "scale 1.9e-09 mm/px", were used at once and overwrote calibration_data.json and the
+    last-calibration pointer: the next px move went anywhere and the good calibration was gone.
+    The fit is refused with words saying to move the stage in both x and y between clicks; the
+    calibration in use, the file and the pointer stay as they were."""
+    g = Rig(tmp_path)
+    try:
+        saved = tmp_path / "calibration_data.json"
+        pointer = tmp_path / "last_calibration_state.json"
+        write_calibration(saved)
+        files = saved.read_text(), pointer.read_text()
+        before = g.ctl.calibration
+        _click_three_spots(g, list(zip(stage_mm, [(100.0, 100.0), (300.0, 100.0), (100.0, 300.0)])))
+        wait_until(lambda: any("Calibration failed" in t for t in g.refusals()))
+        assert "move the stage in both x and y between clicks" in g.refusals()[-1]
+        assert g.ctl.calibration is before
+        assert (saved.read_text(), pointer.read_text()) == files
+    finally:
+        g.close()
+
+
+def test_a_save_that_cannot_be_written_leaves_the_good_file_whole(tmp_path):
+    """Harm stopped: a camera setting JSON cannot hold made Save calibration fail half way through
+    writing: the good file was left truncated (the next start loads no calibration) and the
+    error escaped to the window. The save is refused with words; the file on disk is the old
+    one, whole, and no temporary file is left next to it."""
+    g = Rig(tmp_path)
+    try:
+        path = tmp_path / "saved.json"
+        assert g.ctl.save_calibration(str(path), notes="good").ok
+        good = path.read_text()
+        res = g.ctl.save_calibration(str(path), camera_settings={"sensor": object()})
+        assert (res.ok, res.code) == (False, "save_failed") and "not saved" in res.words
+        assert path.read_text() == good
+        assert sorted(p.name for p in tmp_path.iterdir()) == ["cal.json", "last_calibration_state.json", "saved.json"]
+    finally:
+        g.close()
+
+
+def test_a_fit_with_numpy_numbers_in_the_camera_settings_is_saved(tmp_path):
+    """Harm stopped: camera geometry that arrives as numpy numbers made the save after a fit fail
+    (TypeError): the fit was never written and calibration_data.json was left truncated. The
+    fit is saved and reads back with plain numbers."""
+    g = Rig(tmp_path, calibrated=False)
+    try:
+        g.ctl.start_calibration(3, camera_settings={"aoi": {"width": np.int64(1440)}, "rotation_k": np.int32(-1),
+                                                    "gamma": np.float32(1.5), "roi": np.array([0, 0, 1440, 1080])})
+        for mm, px in [((1.0, 1.0), (100.0, 100.0)), ((3.0, 1.0), (300.0, 100.0)), ((1.0, 2.0), (100.0, 200.0))]:
+            g.ctl.move_mm(*mm)
+            g.ctl.add_calibration_click(*px)
+        wait_until(lambda: any(t.startswith("Calibration fitted") for _, t in g.messages))
+        back = read_calibration_file(str(tmp_path / "calibration_data.json"))
+        assert back.camera_settings == {"aoi": {"width": 1440}, "rotation_k": -1, "gamma": 1.5, "roi": [0, 0, 1440, 1080]}
+        assert back.affine.px_to_mm(200.0, 150.0) == pytest.approx((2.0, 1.5))
+    finally:
+        g.close()
+
+
+def test_load_without_a_path_loads_the_calibration_used_last(tmp_path):
+    """Harm stopped: at start-up (main calls load_calibration() with no path) the GUI loads no
+    calibration, or an older one, instead of the one used last: the first px moves of the day go
+    to the wrong spots. After loading A then B, a load with no path gives B."""
+    g = Rig(tmp_path, calibrated=False)
+    try:
+        assert g.ctl.load_calibration(write_calibration(tmp_path / "a.json", mm_per_px=0.01)).ok
+        assert g.ctl.load_calibration(write_calibration(tmp_path / "b.json", mm_per_px=0.02)).ok
+        assert g.ctl.clear_calibration().ok and g.ctl.calibration is None
+        assert g.ctl.load_calibration().ok
+        assert g.ctl.calibration.px_to_mm(100.0, 100.0) == pytest.approx((2.0, 2.0))
+    finally:
+        g.close()
