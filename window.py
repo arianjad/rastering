@@ -151,6 +151,7 @@ class RasterWindow(QtWidgets.QMainWindow):
         self._backlash_to_save: set = set()
         self._goto_shown = False             # a Go to x, y target was clicked or typed
         self._pattern_error = ""
+        self._drawn: dict = {}               # what the image shows now (big point lists: by identity)
         self.setWindowTitle("Rastering")
 
         self._build()
@@ -414,7 +415,9 @@ class RasterWindow(QtWidgets.QMainWindow):
 
     def _on_raster(self, _snap: RasterSnapshot) -> None:
         self._snap = snap = self.ctl.raster_snapshot()
-        self.view.set_armed_path(snap.path, snap.pattern_len)
+        if snap.path is not self._drawn.get("armed"):     # the path is one tuple per arm: redraw on a new arm only
+            self._drawn["armed"] = snap.path
+            self.view.set_armed_path(snap.path, snap.pattern_len)
         sel = snap.selected_index
         self.view.set_selected_point(snap.path[sel] if 0 <= sel < len(snap.path) else None)
         self._draw_pattern()
@@ -634,10 +637,16 @@ class RasterWindow(QtWidgets.QMainWindow):
     def _draw_pattern(self) -> None:
         s, kind = self._snap, self.pattern.kind_key()
         show = self.rail.current() != SETUP          # Setup: a clear image for the calibration clicks
-        self.view.set_pending_pattern(self._points if show and (s.state == "off" or s.path_edited) else [])
+        pending = self._points if show and (s.state == "off" or s.path_edited) else ()
+        if pending is not self._drawn.get("pending"):    # up to 50 000 points: not again on every step
+            self._drawn["pending"] = pending
+            self.view.set_pending_pattern(pending)
         self.view.set_pattern_corners(self.pattern.corners() if show and kind == "hull" else [])
         self.view.set_scan_bounds(self.pattern.bounds() if show and kind in USES_BOUNDS else None)
-        self.view.set_direction_lines(self.pattern.show_direction.isChecked())
+        on = self.pattern.show_direction.isChecked()
+        if on != self._drawn.get("order"):
+            self._drawn["order"] = on
+            self.view.set_direction_lines(on)
 
     def _draw_trail(self) -> None:
         n = self.run.trail.value()

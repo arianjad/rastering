@@ -1,73 +1,56 @@
-# rastering
-# Laser Ablation Rastering GUI
+# Laser ablation rastering GUI
 
-A flexible GUI-based Python software suite for **precision laser ablation rastering** with real-time camera feedback, motor control, and custom path planning. Designed for use with **Thorlabs KCube** motors and **IDS uEye cameras**, it supports multiple rastering modes, calibration workflows, and real-time overlays.
+Steers the ablation laser spot over a target: a Thorlabs Zelux camera shows the target, two
+Thorlabs Z912 stages (KCube controllers) move it. You calibrate image px to stage mm, draw a
+pattern on the image, then run it from this window or arm it so BLACS (labscript) steps one point
+per shot.
 
----
+## Run
 
-## Features
+```
+py -3.13 main_rastering.py                         real camera, real stages, BLACS link on
+py -3.13 main_rastering.py --simulate --no-blacs   fake camera and stages, no network port
+```
 
-### Real-Time Camera Integration
-- Uses IDS `pyueye` camera driver.
-- Adjustable exposure control.
-- Live stream with real-time motor position and raster path overlays.
+`--simulate` (or `RASTER_SIMULATE=1`) never loads the camera SDK or Kinesis. `--no-blacs` leaves
+the BLACS port free, so a simulated copy can run next to the lab's GUI.
 
-### Motor Control (Thorlabs K-Cubes)
-- Control X and Y axes via GUI.
-- Homing, jogging, and absolute positioning.
-- Configurable backlash correction.
+## The window
 
-### Rastering Algorithms
-Select from:
-- **Square Raster (X-priority)**: Row-by-row.
-- **Square Raster (Y-priority)**: Column-by-column.
-- **Spiral Raster**: Center-outward pattern.
-- **Convex Hull Raster**: Raster within any drawn arbitrary region.
+- **Control bar** (top): who moves the stage (OFF, RUNNING, ARMED FOR BLACS, HELD AT GUI), the
+  stage position [mm], the point, the calibration, shots per point, camera frames per second.
+- **Setup**: calibration (Calibrate: jog the beam to 3 spots and click the laser spot each time;
+  Load…, Save as…, Use last, Clear), device home, user home and backlash (kept in the calibration
+  file), camera exposure, gain, gamma, region, rotation and mirror, and the camera settings file.
+- **Pattern**: square (rows along x or columns along y), inward spiral, or a hull of corners you
+  click on the image; steps and bounds in image px. The points show on the image as you edit.
+- **Run**: Start (continuous) or Arm here (step with Step), Arm for BLACS, Hand to BLACS / Take
+  back, Stop (also Esc), Re-arm with edited pattern, go to a point, position history.
+- **Move stage** (always visible): arrows move the spot on the image by the step [mm]; Go to x, y;
+  Go to user home. Greyed while a raster is active.
+- File > Save settings as defaults keeps the pattern, run options and jog step for the next start.
 
-Path preview is fully interactive and overlays on the live camera feed.
+`docs/window-features.md` lists every control of the previous window and where it went.
 
-### Pixel-to-Motor Calibration
-- Two-click calibration between camera pixels and motor coordinates.
-- Supports saving and reusing calibration data.
-- Manual override of scaling and offset.
+## BLACS link
 
-### Graphical User Interface
-- Built with PyQt5 and QtDesigner (`raster_gui2.ui`).
-- Spin boxes and sliders for all parameters.
-- Image scale and raster preview widgets.
-- On-screen click tools to define paths, hulls, or calibration.
-
-### Logging
-- Every stage job (move, jog, home, backlash) writes a line to the GUI's log when it starts and ends,
-  or why it was refused.
-- With BLACS, each shot's raster point is written into the shot file by BLACS.
-
-### BLACS link (BeamBox, BBX-190)
-- A menu server on the rastering menu's port (beambox-daq `bbx_zmq/menus/rastering.py`; `raster_controller.py` `RasterMenuLink`): BLACS reads every
-  value in one snapshot, moves the spot to an x, y point, sets shots per step, and presses
-  arm / disarm / next point. The menu (names, ranges, time limits) is beambox-daq
-  `bbx_zmq/menus/rastering.py`, the same file BLACS loads.
-- The GUI is the one guard for the stage (`stage.py`): a point outside the motor travel, a pixel
-  point without a calibration, or any other move while a raster is armed is refused.
-
----
+A menu server on the rastering menu's port (beambox-daq `src/bbx_zmq/menus/rastering.py`, the
+same file BLACS loads; handlers in `raster_controller.py` `RasterMenuLink`). BLACS reads all values
+in one snapshot, moves the spot to x, y [px], sets shots per point, and presses arm, disarm and
+next point. Arm takes the pattern set up in the window. `stage.py` is the one check for every
+move: a point outside the stage travel, a px point without a calibration, or a move while a raster
+is armed is refused, with words that say why.
 
 ## Requirements
 
-- Python 3.x  
-- `pyqt5`, `pyqtgraph`, `numpy`, `scipy`, `Pillow`  
-- [IDS uEye camera SDK](https://en.ids-imaging.com/download-ueye.html)  
-- [Thorlabs Kinesis Software](https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=Motion_Control) (required for motor control)  
+- Python 3.13 with PyQt5, pyqtgraph, numpy, scipy, pyzmq; beambox-daq `bbx_zmq` on the path.
+- Thorlabs Kinesis (for the stages) and the Thorlabs camera DLLs (in `dlls/`, SDK in `thorlabs_tsi_sdk/`).
+- Motor serials, Kinesis folder and stage travel: `config.py` (`HardwareConfig`).
 
-The Kinesis folder, the motor serials and the stage travel are in `config.py` (`HardwareConfig`).
+## Tests
 
----
+```
+QT_QPA_PLATFORM=offscreen QT_QPA_FONTDIR=C:/Windows/Fonts ZMQ_V2_REQUIRED=1 py -3.13 -m pytest -q -p no:cacheprovider tests
+```
 
-## Quick Start
-
-1. Clone the repo and install dependencies.
-2. Connect your uEye camera and Thorlabs KCube motors (update serial numbers in `toolbox.py` if needed).
-3. Launch the software:
-
-```bash
-python main_rastering.py
+No hardware, no camera, no network port: safe to run while the lab's GUI runs (about 6 s).

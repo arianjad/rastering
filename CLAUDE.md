@@ -1,6 +1,6 @@
 # Rastering GUI
 
-Laser ablation rastering control: Thorlabs Z912 motors, IDS uEye camera, pattern-based rastering.
+Laser ablation rastering control: Thorlabs Z912 motors, Thorlabs Zelux camera, pattern-based rastering.
 
 ## Python Environment
 
@@ -9,8 +9,16 @@ Laser ablation rastering control: Thorlabs Z912 motors, IDS uEye camera, pattern
   `PYTHONPATH` to test against it.
 - On the RaX PC this GUI used conda env **`rastering`**, NOT `labscript`:
   `source ~/miniconda/etc/profile.d/conda.sh && conda activate rastering`
-- **Run:** `python main_rastering.py` (from this directory)
-- **Tests (controller, no window, no hardware, no socket):** `QT_QPA_PLATFORM=offscreen ZMQ_V2_REQUIRED=1 py -3.13 -m pytest -q -p no:cacheprovider tests/test_raster_paths.py tests/test_raster_session.py tests/test_stage_gate.py tests/test_menu_server.py tests/test_calibration.py tests/test_hardware.py` (about 3 s). They run the real `SystemController` with its threads and two in-memory motors (`tests/rig.py`); BLACS's client talks over `bbx_zmq.InMemoryTransport`. Tests that import `ui.py` start the camera: never run them (or the whole `tests/` dir) while the lab's rastering GUI runs.
+- **Run:** `py -3.13 main_rastering.py` (from this directory). Offline, next to the lab's GUI:
+  `py -3.13 main_rastering.py --simulate --no-blacs` (fake motors, fake camera, no port).
+- **Tests (the whole folder; no hardware, no camera SDK, no socket; about 6 s):**
+  `QT_QPA_PLATFORM=offscreen QT_QPA_FONTDIR=C:/Windows/Fonts ZMQ_V2_REQUIRED=1 py -3.13 -m pytest -q -p no:cacheprovider tests`.
+  They run the real `SystemController` with two in-memory motors (`tests/rig.py`), the real window
+  offscreen with the fake camera (`tests/test_window.py`), and BLACS's client over
+  `bbx_zmq.InMemoryTransport`. Safe to run while the lab's rastering GUI runs.
+- **Screenshots:** `py -3.13 scripts/screenshot_window.py OUT_DIR` (the real window, simulated,
+  offscreen, in each state, dark and light, 1280 and 2560 wide); `scripts/view_gallery.py` renders
+  the view parts alone. Neither saves the theme preference.
 
 ## Simulation Mode (no motors)
 
@@ -39,10 +47,12 @@ BeamBox (BBX-190): BLACS talks to this GUI through the **menu link** of beambox-
 - `raster_session.py` — the raster's state (off/local/armed/running), armed path, cursor; `RasterPlan`, `RasterSnapshot` (pure)
 - `calibration.py` — px -> mm affine fit and checks, the calibration file, the last-calibration pointer (pure)
 - `motors_sim.py` — simulated stage axis (no pythonnet)
-- `ui.py` — PyQt5 GUI (no ZMQ, no hardware direct calls)
-- `config.py` — All configuration (ports, hardware serials, camera params)
-- `hardware.py` — Thorlabs KCube (Kinesis via pythonnet, loaded only when a KCube is made)
-- `camera.py` — IDS uEye camera interface
 - `raster_paths.py` — pattern points: `points_from_spec(RasterSpec)` (square x/y, spiral, convex hull), `nearest_index` (pure)
-- `status_strip.py` — annunciator chips (pure state functions + StatusStrip; camera-safe tests); rendered in a strip at the TOP of the image pane (bottom QStatusBar is hidden)
-- `theme.py` — dark + light QSS/palettes and theme persistence (QSettings, machine-wide); applied at startup in main_rastering.py, toggled live via View → Light theme (ui.py)
+- `config.py` — all configuration (hardware serials, travel, camera defaults, paths); saved defaults
+- `hardware.py` — Thorlabs KCube (Kinesis via pythonnet, loaded only when a KCube is made)
+- `main_rastering.py` — start-up: theme, controller, camera thread (real or `camera_sim.SimCamera`), window, last calibration
+- `window.py` — the main window: layout, wiring to the controller and camera, `gates()` (the one place that decides which buttons are enabled), clicks on the image by step. Each signal handler re-reads the controller (queued signals can arrive out of order)
+- `views/` — view parts, plain data in and Qt signals out: `control_bar`, `step_rail`, `setup_step`, `pattern_step`, `run_step`, `camera_view`, `camera_panel`, `jog_pad`, `log_line`, `widgets`
+- `camera_thorlabs.py` — Zelux camera, its thread and the camera settings file (`camera_params.ini`); `camera_sim.py` — the fake camera
+- `theme.py` — colour tokens, fonts, the stylesheet, high-DPI set-up; the machine-wide theme preference is written only by View > Light theme (main passes `theme.save_light_pref` to the window)
+- `docs/window-features.md` — every control of the old window and where it is now
