@@ -25,7 +25,7 @@ from raster_paths import nearest_index, points_from_spec
 from raster_session import RasterPlan, RasterSnapshot
 from stage import StagePosition
 from views import CameraPanel, CameraView, ControlBar, JogPad, LogLine, Section, StepRail, label, set_prop
-from views.camera_view import unreachable_mask
+from views.camera_view import drawn_every, unreachable_mask
 from views.pattern_step import USES_BOUNDS, PatternStep
 from views.run_step import RunStep
 from views.setup_step import SetupStep
@@ -692,13 +692,13 @@ class RasterWindow(QtWidgets.QMainWindow):
         if pts and self.ctl.calibration is not None:
             outside = len(pts) - sum(self.ctl.reachable(pts))
         self.pattern.show_result(len(pts) if pts else None, error=self._pattern_error, outside=outside,
-                                 pingpong=self.run.pingpong.isChecked())
+                                 pingpong=self.run.pingpong.isChecked(), drawn_every=drawn_every(len(pts)))
 
     def _draw_pattern(self) -> None:
         s, kind = self._snap, self.pattern.kind_key()
         show = self.rail.current() != SETUP          # Setup: a clear image for the calibration clicks
         pending = self._points if show and (s.state == "off" or s.path_edited) else ()
-        if pending is not self._drawn.get("pending"):    # up to 50 000 points: not again on every step
+        if pending is not self._drawn.get("pending"):    # up to 2 million points: not again on every step
             self._drawn["pending"] = pending
             self.view.set_pending_pattern(pending)
         self.view.set_pattern_corners(self.pattern.corners() if show and kind == "hull" else [])

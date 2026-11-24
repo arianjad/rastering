@@ -195,8 +195,9 @@ class PatternStep(QtWidgets.QWidget):
 
     # ---------------- program -> view ----------------
     def show_result(self, points: Optional[int], *, error: str = "", outside: int = 0,
-                    pingpong: bool = False) -> None:
-        """points: the pattern's point count (None: no pattern, `error` says why)."""
+                    pingpong: bool = False, drawn_every: int = 1) -> None:
+        """points: the pattern's point count (None: no pattern, `error` says why). drawn_every:
+        the image draws 1 point in this many."""
         if points is None:
             self.count.setText("No pattern")
             set_prop(self.count, "tone", "fault")
@@ -210,6 +211,8 @@ class PatternStep(QtWidgets.QWidget):
             notes.append(f"Ping-pong: {2 * points} steps per round trip.")
         if outside:
             notes.append(f"{outside} outside the stage travel: left out when armed.")
+        if drawn_every > 1:
+            notes.append(f"1 point in {drawn_every} drawn; all are armed.")
         self.count_detail.setText(" ".join(notes))
         set_prop(self.count_detail, "tone", "fault" if outside == points else "")
 

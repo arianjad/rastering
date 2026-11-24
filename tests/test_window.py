@@ -192,6 +192,23 @@ def test_camera_backlash_and_here_stay_live_during_a_raster_or_a_move(make):
     rig.x.gate.set()
 
 
+def test_a_big_pattern_is_armed_whole_and_drawn_as_a_subset(make):
+    """Harm stopped: a pattern over 50,000 points was refused, so a fine grid could not be run;
+    drawn whole, a million points take seconds per redraw and the window stalls on every edit.
+    A 100,000-point pattern arms all its points; the image draws one point in 2 (at most 50,000)
+    and the Pattern step says so."""
+    rig, win = make(pattern={"kind": "square_x", "bounds": [0, 999, 0, 99], "xstep": 1, "ystep": 1})
+    pump_until(lambda: len(win._points) == 100_000)
+    assert win.pattern.count.text() == "100000 points"
+    assert "1 point in 2 drawn" in win.pattern.count_detail.text()
+    assert len(win.view._pending_item.getData()[0]) == 50_000
+    win.run.arm_blacs_btn.click()
+    pump_until(lambda: win.bar.status()["state"] == "armed")
+    assert len(rig.ctl.raster_snapshot().path) == 100_000
+    assert len(win.view._armed_item.getData()[0]) == 50_000
+    rig.ctl.stop_raster()
+
+
 def test_a_plain_warning_is_not_red_and_a_red_warning_is(make):
     """Harm stopped: every warning shown in the fault colour (red lines that are not faults teach
     the operator to ignore the real ones), or a warning that does need attention (a move outside

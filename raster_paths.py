@@ -16,7 +16,10 @@ XY = Tuple[float, float]
 Bounds = Tuple[float, float, float, float]  # xmin, xmax, ymin, ymax [px]
 
 KINDS = ("square_x", "square_y", "spiral", "hull")
-MAX_PATH_POINTS = 50_000        # the longest path the GUI draws or arms
+# The most points a pattern may have: building and arming take about a second per million on the
+# GUI thread, and a typo'd 0.01 px step would ask for billions (the window would freeze). The
+# image draws at most views/camera_view.MAX_DRAWN of them; all are armed.
+MAX_PATH_POINTS = 2_000_000
 _MAX_HULL_CELLS = 5_000_000     # hull grid cells tested at most (memory and time)
 # Spiral angle steps at most, clipped ones included: the spiral is built point by point on the
 # GUI thread (about 0.3 s per million steps), so more would freeze the window.
@@ -90,7 +93,8 @@ def nearest_index(points: Sequence[XY], x: float, y: float) -> int:
 
 
 def _too_many(n: int) -> ValueError:
-    return ValueError(f"the pattern has {n} points, more than {MAX_PATH_POINTS}: use larger steps")
+    return ValueError(f"the pattern has {n:,} points, more than {MAX_PATH_POINTS:,} (the window would freeze): "
+                      "use larger steps")
 
 
 def _grid(start: float, stop: float, step: float, *, snap_stop: bool) -> np.ndarray:

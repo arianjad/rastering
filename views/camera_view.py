@@ -18,6 +18,9 @@ from camera_thorlabs import DisplayGeometry
 XY = Tuple[float, float]
 _CACHE = QtWidgets.QGraphicsItem.DeviceCoordinateCache
 _HATCH_UP = 3          # mask cells drawn 3 x 3 so the hatch has room
+# The most pattern or path points drawn: drawing costs about 1.6 us a point (1.5 million points:
+# 2.5 s per redraw, offscreen), so a bigger pattern is drawn as an even subset (all are armed).
+MAX_DRAWN = 50_000
 
 
 def unreachable_mask(frame_w: int, frame_h: int, M, b, motor_bounds, cell_px: int = 8) -> np.ndarray:
@@ -43,6 +46,16 @@ def _reticle() -> QtGui.QPainterPath:
         p.moveTo(x0, y0)
         p.lineTo(x1, y1)
     return p
+
+
+def drawn_every(n: int) -> int:
+    """1 point in drawn_every(n) of an n-point pattern is drawn (1: all of them)."""
+    return max(1, -(-int(n) // MAX_DRAWN))
+
+
+def _thinned(points: Optional[Sequence[XY]]) -> list:
+    pts = list(points or [])
+    return pts[::drawn_every(len(pts))]
 
 
 def _xs_ys(points: Optional[Sequence[XY]]):
@@ -268,18 +281,19 @@ class CameraView(QtWidgets.QWidget):
 
     # ---------------- overlays (image px) ----------------
     def set_pending_pattern(self, points: Sequence[XY]) -> None:
-        """The pattern drawn but not armed: open rings in the path colour."""
-        self._pending = list(points or [])
+        """The pattern drawn but not armed: open rings in the path colour (1 point in
+        drawn_every(n) of them)."""
+        self._pending = _thinned(points)
         self._pending_item.setData(*_xs_ys(self._pending))
         self._draw_directions()
 
     def set_armed_path(self, points: Sequence[XY], pattern_len: Optional[int] = None) -> None:
         """The armed path: filled dots in the path colour. With ping-pong the path is
         the pattern then itself reversed; pass pattern_len to draw only the pattern."""
-        pts = list(points or [])
+        pts = points or []
         if pattern_len is not None and pattern_len >= 0:
             pts = pts[:int(pattern_len)]
-        self._armed = pts
+        self._armed = pts = _thinned(pts)
         self._armed_item.setData(*_xs_ys(pts))
         self._draw_directions()
 

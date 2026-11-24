@@ -67,7 +67,7 @@ the reason.
 | Display Options group | Merged |
 | Show current position | Dropped: the stage crosshair is always shown |
 | Display points + Last N | Merged: "Trail on image", last N positions (Run step) |
-| Display raster points + Last N | Dropped: the whole armed path is drawn (at most 50 000 points) |
+| Display raster points + Last N | Dropped: the whole armed path is drawn; above 50 000 points an even subset is drawn (the Pattern step says 1 point in k) and all are armed. A pattern over 2 million points cannot be built (the window would freeze) |
 
 ## Jog / Move panel → Move stage
 | Old | Now |

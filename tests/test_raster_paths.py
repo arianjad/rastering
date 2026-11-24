@@ -85,8 +85,8 @@ def test_spiral_visits_each_spot_once_and_stays_in_the_scan_bounds():
      "the corners lie on one line"),
     (RasterSpec(kind="hull", hull_points=[(10, 10), (490, 20), (250, 480)], xstep=0.01, ystep=0.01),
      "hull grid too fine"),
-    (RasterSpec(kind="square_x", bounds=(0, 1000, 0, 1000), xstep=1, ystep=1),
-     f"more than {MAX_PATH_POINTS}: use larger steps"),
+    (RasterSpec(kind="square_x", bounds=(0, 3000, 0, 3000), xstep=1, ystep=1),
+     f"more than {MAX_PATH_POINTS:,} (the window would freeze): use larger steps"),
     (RasterSpec(kind="square_y", bounds=(0, 10, 0, 10), xstep=0, ystep=1), "step x and step y must be > 0"),
     (RasterSpec(kind="square_x", bounds=None), "needs scan bounds"),
     (RasterSpec(kind="spiral", origin=(900, 900), radius=5, step=1, angle_step=0.5, bounds=(0, 10, 0, 10)),
@@ -99,6 +99,17 @@ def test_a_pattern_that_cannot_be_built_says_why_before_anything_moves(spec, wor
     pattern raises ValueError with words that say what to change."""
     with pytest.raises(ValueError, match=words.replace("(", r"\(").replace(")", r"\)")):
         points_from_spec(spec)
+
+
+def test_a_pattern_of_more_than_50000_points_is_built_whole():
+    """Harm stopped: a fine grid over a large target (5 x 5 px over the whole 1440 x 1080 frame:
+    62,713 points) was refused at 50,000 points, though only drawing that many is slow; the
+    operator could not run it at all. It is built whole, in well under a second; only a pattern
+    that would freeze the window (over MAX_PATH_POINTS, 2 million) cannot be built."""
+    t0 = time.perf_counter()
+    pts = points_from_spec(RasterSpec(kind="square_x", bounds=(0, 1440, 0, 1080), xstep=5, ystep=5))
+    assert len(pts) == 289 * 217 and time.perf_counter() - t0 < 1.0
+    assert MAX_PATH_POINTS == 2_000_000
 
 
 @pytest.mark.parametrize("change, angle_step, words", [
