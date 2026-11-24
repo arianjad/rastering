@@ -38,16 +38,17 @@ Path preview is fully interactive and overlays on the live camera feed.
 - On-screen click tools to define paths, hulls, or calibration.
 
 ### Logging
-- Logs motor positions at each raster step.
-- JSON format for easy data analysis.
-- Automatic timestamped filenames.
+- Every stage job (move, jog, home, backlash) writes a line to the GUI's log when it starts and ends,
+  or why it was refused.
+- With BLACS, each shot's raster point is written into the shot file by BLACS.
 
 ### BLACS link (BeamBox, BBX-190)
 - A menu server on the rastering menu's port (beambox-daq `bbx_zmq/menus/rastering.py`; `raster_controller.py` `RasterMenuLink`): BLACS reads every
   value in one snapshot, moves the spot to an x, y point, sets shots per step, and presses
   arm / disarm / next point. The menu (names, ranges, time limits) is beambox-daq
   `bbx_zmq/menus/rastering.py`, the same file BLACS loads.
-- The GUI is the one guard for the stage: a point outside the motor travel is refused.
+- The GUI is the one guard for the stage (`stage.py`): a point outside the motor travel, a pixel
+  point without a calibration, or any other move while a raster is armed is refused.
 
 ---
 
@@ -58,7 +59,7 @@ Path preview is fully interactive and overlays on the live camera feed.
 - [IDS uEye camera SDK](https://en.ids-imaging.com/download-ueye.html)  
 - [Thorlabs Kinesis Software](https://www.thorlabs.com/software_pages/ViewSoftwarePage.cfm?Code=Motion_Control) (required for motor control)  
 
-Ensure Kinesis `.dll` references in `toolbox.py` match your system’s installation path.
+The Kinesis folder, the motor serials and the stage travel are in `config.py` (`HardwareConfig`).
 
 ---
 
