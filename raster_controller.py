@@ -215,9 +215,13 @@ class SystemController(QObject):
     def set_pending_plan(self, plan: Optional[RasterPlan]) -> None:
         """The pattern set up in the Run tab: what the next arm (the window's or BLACS's) arms."""
         with self._lock:
-            self._session.pending = plan
+            old = self._session.plan
+            taken = self._session.set_pending(plan)
             snap = self._session.snapshot()
         self.raster_changed.emit(snap)
+        if taken and plan.delay_s != old.delay_s:
+            self.message.emit("info", f"The armed raster now waits {plan.delay_s:g} s per point in a "
+                                      "continuous run (from its next point).")
 
     def arm(self, *, for_blacs: bool = False) -> Result:
         """Arm the pending plan: a continuous run starts at once; otherwise it is stepped at the

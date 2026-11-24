@@ -22,7 +22,7 @@ the reason.
 | Stop | Kept: "Stop (Esc)"; greyed when nothing is armed |
 | Step | Kept; enabled only while held at the GUI |
 | (none) | New: "Pause" holds a continuous run at the GUI at its point; "Continue" runs a held raster on by itself from the point the stage is at. Go to selected point N, then Continue: the run goes on from N |
-| Continuous | Kept; editable while armed (the edit shows the edited notice, Re-arm applies it) |
+| Continuous | Kept; editable while armed. Continuous and the delay reach the armed raster at once (the delay from its next point); a ping-pong change shows "Run options changed since arming" and waits for Re-arm |
 | Delay (s) | Kept: "Delay per point" [s], enabled with Continuous |
 | Ping-pong | Kept |
 | Save position history | Kept: "Record to a file" (CSV: time_s, x_mm, y_mm, x_px, y_px, in `logs/`) |

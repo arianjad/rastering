@@ -213,6 +213,25 @@ def test_a_pattern_edit_after_arming_shows_the_edited_notice_until_re_armed(make
     assert not win.bar.edited_notice.isVisibleTo(win)
 
 
+def test_a_new_delay_reaches_the_armed_raster_at_once_and_is_not_called_a_pattern_edit(make):
+    """Harm stopped: changing only the delay per point of a running raster said "Pattern edited
+    since arming. Re-arm to run it."; the run kept the old delay, and Re-arm restarted it at point 0,
+    so spots were ablated twice. The delay (or Continuous) is taken by the armed raster at once;
+    a ping-pong change (a new path) asks for a re-arm as "Run options changed"."""
+    rig, win = make(run={"continuous": True, "delay_s": 0.05})
+    win.run.start_btn.click()
+    pump_until(lambda: win.bar.status()["state"] == "running")
+    win.run.delay.setValue(0.02)
+    pump()
+    snap = rig.ctl.raster_snapshot()
+    assert (snap.path_edited, snap.armed_plan.delay_s) == (False, 0.02)
+    assert not win.bar.edited_notice.isVisibleTo(win)
+    win.run.pingpong.setChecked(True)
+    pump_until(lambda: win.bar.edited_notice.isVisibleTo(win))
+    assert win.bar.edited_notice.text().startswith("Run options changed since arming.")
+    win.run.stop_btn.click()
+
+
 def test_blacs_arms_the_pattern_drawn_in_the_window(make):
     """Harm stopped: BLACS arms a pattern other than the one on the operator's screen (an old one,
     or none) and ablates spots nobody chose. The corners clicked on the image are the pattern

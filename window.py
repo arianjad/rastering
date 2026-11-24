@@ -365,7 +365,7 @@ class RasterWindow(QtWidgets.QMainWindow):
         self.bar.set_status(state=s.state, point_index=s.point_index, path_len=len(s.path),
                             calibration=cal_state, cal_clicks=self._cal_progress,
                             shots_per_point=s.shots_per_step, pattern_edited=s.path_edited,
-                            camera_fps=self._fps)
+                            options_edited=s.options_edited, camera_fps=self._fps)
         self.rail.show_progress(self._fps is not None, cal_state, len(self._points), s.state)
         cf = self.ctl.calibration_file
         self.setup.show_calibration(cal_state, path=(cf.path or "") if cf else "",

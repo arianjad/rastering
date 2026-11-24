@@ -25,6 +25,10 @@ STATE_WORDS = {
 
 CALIBRATION_STATES = ("none", "collecting", "loaded", "stale")
 
+# The edited notice, by options_edited: the pattern changed, or only a run option (ping-pong).
+EDITED_WORDS = {False: "Pattern edited since arming.\nRe-arm to run it.",
+                True: "Run options changed since arming.\nRe-arm to use them."}
+
 _KEEP = object()   # set_status: argument not given, keep what is shown
 
 
@@ -146,9 +150,9 @@ class ControlBar(QtWidgets.QWidget):
         self.shots = _Field("Shots per point")
         lay.addWidget(self.shots)
 
-        self.edited_notice = label("Pattern edited since arming.\nRe-arm to run it.", role="small")
+        self.edited_notice = label(EDITED_WORDS[False], role="small")
         self.edited_notice.setObjectName("editedNotice")
-        self.edited_notice.setToolTip("The pattern on the image is not the one armed: "
+        self.edited_notice.setToolTip("The path the Run step would arm now is not the armed one: "
                                       "the armed path still runs until you re-arm.")
         self.edited_notice.hide()
         lay.addWidget(self.edited_notice)
@@ -161,7 +165,7 @@ class ControlBar(QtWidgets.QWidget):
 
         self._status = dict(state="off", x_mm=None, y_mm=None, point_index=None, path_len=0,
                             calibration="none", cal_clicks=None, shots_per_point=None,
-                            pattern_edited=False, camera_fps=None)
+                            pattern_edited=False, options_edited=False, camera_fps=None)
         self._fix_widths()
         self._show()
 
@@ -171,18 +175,20 @@ class ControlBar(QtWidgets.QWidget):
 
     def set_status(self, *, state=_KEEP, x_mm=_KEEP, y_mm=_KEEP, point_index=_KEEP,
                    path_len=_KEEP, calibration=_KEEP, cal_clicks=_KEEP, shots_per_point=_KEEP,
-                   pattern_edited=_KEEP, camera_fps=_KEEP) -> None:
+                   pattern_edited=_KEEP, options_edited=_KEEP, camera_fps=_KEEP) -> None:
         """state: "off" | "running" | "armed" | "local" (the menu's raster_state).
         x_mm, y_mm: stage position [mm], None = unknown.
         point_index: 0-based point the stage was last stepped to (-1/None = none yet);
         path_len: points in the armed path (0 = none; ping-pong counts the way back).
         calibration: "none" | "collecting" | "loaded" | "stale"; cal_clicks: (done, needed).
-        shots_per_point: int or None. pattern_edited: the pattern on screen differs from
-        the armed one. camera_fps: frames/s, None = no frames arriving."""
+        shots_per_point: int or None. pattern_edited: the path on screen differs from
+        the armed one; options_edited: by a run option only (the notice says so).
+        camera_fps: frames/s, None = no frames arriving."""
         new = {k: v for k, v in dict(
             state=state, x_mm=x_mm, y_mm=y_mm, point_index=point_index, path_len=path_len,
             calibration=calibration, cal_clicks=cal_clicks, shots_per_point=shots_per_point,
-            pattern_edited=pattern_edited, camera_fps=camera_fps).items() if v is not _KEEP}
+            pattern_edited=pattern_edited, options_edited=options_edited,
+            camera_fps=camera_fps).items() if v is not _KEEP}
         if all(self._status.get(k) == v for k, v in new.items()):
             return                       # telemetry repeats the same values; skip repaint
         self._status.update(new)
@@ -239,4 +245,5 @@ class ControlBar(QtWidgets.QWidget):
         text, tone = fps_words(s["camera_fps"])
         self.camera.show_value(text, tone, "Frames per second arriving from the camera.")
 
+        self.edited_notice.setText(EDITED_WORDS[bool(s["options_edited"])])
         self.edited_notice.setVisible(bool(s["pattern_edited"]))

@@ -50,6 +50,7 @@ class RasterSnapshot:
     armed_plan: Optional[RasterPlan] = None
     pending_plan: Optional[RasterPlan] = None
     path_edited: bool = False          # armed, and the Run tab's plan is not the armed one
+    options_edited: bool = False       # path_edited, by a run option only (ping-pong), not the pattern
     run: int = 0                       # counts arms; a queued raster point belongs to one run
     seq: int = 0                       # counts snapshots: a higher seq was taken later
 
@@ -151,6 +152,19 @@ class RasterSession:
             self.state = LOCAL
         return was_armed
 
+    def set_pending(self, plan: Optional[RasterPlan]) -> bool:
+        """The Run tab's plan. When it differs from the armed one only in how the raster runs
+        (delay, continuous: the path is the same), the armed raster takes it at once; returns True
+        then. A new pattern or ping-pong (a new path) waits for a re-arm."""
+        self.pending = plan
+        armed = self.plan
+        if self.state == OFF or plan is None or armed is None or plan == armed:
+            return False
+        if (plan.spec, plan.pingpong) != (armed.spec, armed.pingpong):
+            return False
+        self.plan = plan
+        return True
+
     def stop(self) -> bool:
         """End the raster. Returns True when one was armed or running."""
         was = self.state != OFF
@@ -159,11 +173,12 @@ class RasterSession:
 
     def snapshot(self) -> RasterSnapshot:
         self._seq += 1
+        edited = self.state != OFF and self.pending is not None and self.pending != self.plan
         return RasterSnapshot(
             state=self.state, path=self.path, pattern_len=self.pattern_len, dropped=self.dropped,
             point_index=self.cursor, selected_index=self.selected, shots_per_step=self.shots_per_step,
-            armed_plan=self.plan, pending_plan=self.pending,
-            path_edited=self.state != OFF and self.pending is not None and self.pending != self.plan,
+            armed_plan=self.plan, pending_plan=self.pending, path_edited=edited,
+            options_edited=edited and self.plan is not None and self.pending.spec == self.plan.spec,
             run=self.run, seq=self._seq)
 
 
