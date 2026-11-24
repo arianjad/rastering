@@ -116,9 +116,26 @@ def test_move_to_next_moves_nothing_unless_the_raster_is_armed_for_blacs(gui):
     held = _ok(gui.blacs.program("move_to_next", 1))
     assert (held["point_index"], held["target_xy"], held["path_len"]) == (0, [100.0, 200.0], 3)
     assert "in_place" not in held and "wrapped" not in held
+    assert held["held"] is True                  # not a step: BLACS's record must not count it as one
     assert gui.moves() == moves
     _ok(gui.blacs.program("arm_raster", 0))
     assert _ok(gui.blacs.program("move_to_next", 1))["point_index"] == 1
+
+
+def test_a_held_or_running_raster_answers_held_and_a_real_step_does_not(gui):
+    """Harm stopped: while the raster is held at the GUI or runs there, move_to_next answered with
+    the same keys as a real step, so BLACS's shot file recorded "stepped to point 0" for shots
+    that stayed wherever the GUI had put the stage; lyse counts them as fresh spots. That reply
+    carries held: true; a real step never does."""
+    _ok(gui.blacs.program("arm_raster", 0))
+    assert "held" not in _ok(gui.blacs.program("move_to_next", 1))
+    gui.ctl.take_back()
+    assert _ok(gui.blacs.program("move_to_next", 1))["held"] is True
+    gui.ctl.stop_raster()
+    gui.plan(continuous=True, delay_s=5.0)
+    assert gui.ctl.arm().ok
+    wait_until(lambda: gui.ctl.raster_snapshot().point_index == 0)
+    assert _ok(gui.blacs.program("move_to_next", 1))["held"] is True
 
 
 def _make_raster(gui, state):

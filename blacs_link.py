@@ -16,7 +16,7 @@ sends every value as a float (arm_raster 0.0, shots_per_step 2.0), as RaX does.
                                             point (point_index, path_len, target_xy, frame,
                                             calibration_matrix, calibration_offset, wrapped).
                                             Held at the GUI or a continuous run: the point it is
-                                            at, nothing moves. Nothing armed: {in_place: true,
+                                            at with held: true, nothing moves. Nothing armed: {in_place: true,
                                             target_xy, frame}, nothing moves.
     PROGRAM_VALUE shots_per_step n          shown in the GUI: {shots_per_step}
     PROGRAM_VALUE disarm_raster 1           the GUI steps the raster BLACS had: {disarmed}
@@ -33,7 +33,9 @@ Live state (PUB socket, NetworkConfig.pub_bind, port 55536), one text frame "<to
                    none|local|remote; calibration_status calibrated|uncalibrated;
                    raster_progress <point_index + 1>/<path_len>
 
-Two additions to upstream, both additive (RaX's own BLACS still works with them):
+Additions to upstream, all additive (RaX's own BLACS still works with them):
+- move_to_next answers held: true when it did not step (held at the GUI or a continuous run), so
+  BLACS's record does not count it as a step.
 - move_to_next answers wrapped: true on the step from the last point back to point 0. It never
   answers finished: true (in RaX that means "path used up, nothing moved, arm again"; this path
   loops).
@@ -160,7 +162,7 @@ class RaxLink(RemoteControlServerBase):
             return extra
         i, n = snap.point_index, len(snap.path)
         pt = snap.path[i] if 0 <= i < n else (pos.px if pos is not None else None)
-        return self._point_meta(i, n, pt)
+        return {**self._point_meta(i, n, pt), "held": True}
 
     def _point_meta(self, i: int, n: int, pt) -> Dict[str, Any]:
         """upstream raster_point_meta: which point, where it was sent [px], and the calibration."""
