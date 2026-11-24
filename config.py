@@ -1,68 +1,54 @@
-"""
-config.py
+"""All settings of the rastering GUI, in one place (no environment-variable overrides).
 
-Central configuration for the beam steering / raster application.
-
-Philosophy:
-- Keep all settings here (single source of truth).
-- No environment-variable overrides.
-
-NOTE: Target-space units here should match your plot/click coordinates (pixels or mm depending on UI scaling).
+Image coordinates are camera pixels [px]; stage coordinates are motor millimetres [mm].
+settings_defaults.json next to this file holds the operator's saved pattern and display
+settings (load_settings_defaults / save_settings_defaults).
 """
 
 from __future__ import annotations
 
+import json
+import os
 from dataclasses import dataclass
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 Bounds = Tuple[float, float, float, float]  # xmin, xmax, ymin, ymax
 
+HERE = os.path.dirname(os.path.abspath(__file__))
+SETTINGS_DEFAULTS_FILE = os.path.join(HERE, "settings_defaults.json")
 
-# -------------------------
-# Dataclass-style config
-# -------------------------
 
 @dataclass(frozen=True)
 class HardwareConfig:
-    # Motor serials
-    serial_x: str = "27270103"  # BeamBox
-    serial_y: str = "27007520"  # BeamBox
+    # Motor serials (the BeamBox Z912 stages)
+    serial_x: str = "27270103"
+    serial_y: str = "27007520"
 
-    # Run with SimulatedMotor instead of real KCubes (UI/raster testing
-    # with no motor connected). Env var RASTER_SIMULATE=1 overrides this at
-    # launch without editing config. Leave False for the real rig.
+    # Simulated motors instead of the KCubes (main_rastering.py --simulate). Explicit only: a
+    # KCube that fails to start is an error, never a silent switch to simulated motors.
     simulate: bool = False
 
+    # Kinesis install folder (the .NET DLLs)
+    kinesis_dir: str = r"C:\Program Files\Thorlabs\Kinesis"
 
-    # Kinesis install directory.
-    # - Set explicitly if needed, or leave None to let hardware.py search common locations.
-    kinesis_dir: Optional[str] = None
-
-    # Kinesis init/polling
+    # Kinesis start-up and polling
     poll_ms: int = 100
     settings_wait_ms: int = 10_000
     device_settings_name: str = "Z912"
-    verbose: bool = False
 
-    # HARD safety bounds (xmin, xmax, ymin, ymax) -- Z912 travel is 0-12 mm.
-    # Set to None to disable hard bounding in the controller.
-    motor_bounds: Optional[Bounds] = (0.0, 12.0, 0.0, 12.0)
-    # Units guard: motor_bounds is MOTOR-space mm, never pixel/target units
-    # (pixel-space limits belong in raster.target_bounds). The controller
-    # refuses to construct if this is not "motor".
-    motor_bounds_units: str = "motor"
+    # A move or a device home that takes longer is stopped and reported as failed [s]
+    move_timeout_s: float = 10.0
+    home_timeout_s: float = 30.0
 
-
-@dataclass(frozen=True)
-class TelemetryConfig:
-    # Position polling period (seconds); controller enqueues READ_POS at this rate
-    period_s: float = 0.2
+    # Stage travel (xmin, xmax, ymin, ymax) [mm]: the Z912 travel is 0-12 mm. Every move is
+    # checked against it (stage.py).
+    travel_mm: Bounds = (0.0, 12.0, 0.0, 12.0)
 
 
 @dataclass(frozen=True)
 class NetworkConfig:
-    # Serve BLACS (the menu link, BBX-190) on the rastering menu's port
-    # (beambox-daq bbx_zmq/menus/rastering.py). False: the GUI runs without BLACS.
+    # Serve BLACS the rastering menu (beambox-daq bbx_zmq/menus/rastering.py, its port).
+    # False: the GUI runs without BLACS.
     blacs_link: bool = True
 
 
@@ -113,53 +99,25 @@ class CameraConfig:
 
 @dataclass(frozen=True)
 class RasterDefaults:
-    # SOFT bounds in target-space units (what user sees/raster uses).
-    # Keep None if you want UI to define these from hull/bounds widgets.
-    target_bounds: Optional[Bounds] = None
-
-    x_step: float = 0.2
-    y_step: float = 0.2
-
-    # Spiral defaults
-    spiral_radius: float = 1.0
-    spiral_step: float = 0.1
-    spiral_angle_step: float = 0.2
-    spiral_angle_step_change: float = 0.0
-
-    # BeamBox: run the pattern forwards, then backwards, then forwards ...
-    # (ping-pong), so the stages retrace their path instead of jumping from
-    # the last point back to the first (one long move less per pass, and no
-    # direction reversal at an arbitrary point: the stages have backlash).
-    # True = the old lab copy's behaviour. False = upstream: every pass
-    # restarts at point 0.
-    # This is only the DEFAULT of the "Ping-pong" checkbox in the Run tab's
-    # Raster group. The value that counts is the checkbox at arm time (every
-    # arm, local or BLACS, goes through ui._start_raster). "Save as defaults"
-    # stores it as pattern.back_and_forth in settings_defaults.json, which
-    # overrides this value at the next launch.
-    # Consequence of ping-pong on: one armed cycle is 2N points for an N-point
-    # pattern. The shot h5 point_index runs 0..2N-1 and path_len = 2N
-    # (site k is visited at index k and at 2N-1-k; target_xy stays exact),
-    # so "one pass = path_len x shots_per_step shots" means 2 visits per
-    # site, and the two turnaround points get 2 x shots_per_step shots in a
-    # row. Ping-pong off: one cycle is N points, point_index 0..N-1,
-    # path_len = N, one visit per site per pass.
+    # Default of the Run tab's ping-pong box: run the pattern forwards, then backwards, and so on,
+    # so the stages retrace their path instead of jumping from the last point back to the first
+    # (the stages have backlash). With ping-pong an N-point pattern is armed as a 2N-point path:
+    # point_index runs 0..2N-1, path_len = 2N, spot k is visited at k and 2N-1-k, and the two
+    # turnaround spots get two steps in a row.
     back_and_forth: bool = True
 
 
 @dataclass(frozen=True)
 class PathsConfig:
+    # Written after every calibration fit [relative to this folder unless absolute]
     calibration_path: str = "calibration_data.json"
-    raster_log_dir: str = "logs"
-    # Per-pass raster_log_<ts>.json files. Off by default: with BLACS
-    # wrap-on-finished (2026-08-03) a long queue writes one file per pass.
-    raster_log_enabled: bool = False
+    # Where the position-history CSV goes
+    log_dir: str = "logs"
 
 
 @dataclass(frozen=True)
 class AppConfig:
     hardware: HardwareConfig = HardwareConfig()
-    telemetry: TelemetryConfig = TelemetryConfig()
     network: NetworkConfig = NetworkConfig()
     camera: CameraConfig = CameraConfig()
     raster: RasterDefaults = RasterDefaults()
@@ -168,15 +126,18 @@ class AppConfig:
 
 APP_CONFIG = AppConfig()
 
-# -------------------------
-# Backwards-compatible constants (optional)
-# -------------------------
 
-SERIAL_X = APP_CONFIG.hardware.serial_x
-SERIAL_Y = APP_CONFIG.hardware.serial_y
+def load_settings_defaults(path: str = SETTINGS_DEFAULTS_FILE) -> Optional[Dict[str, Any]]:
+    """The saved pattern and display settings, or None when there are none (or unreadable)."""
+    try:
+        with open(path, "r") as f:
+            data = json.load(f)
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
 
-CALIBRATION_PATH = APP_CONFIG.paths.calibration_path
-TELEMETRY_PERIOD_S = APP_CONFIG.telemetry.period_s
 
-DEFAULT_TARGET_BOUNDS = APP_CONFIG.raster.target_bounds
-DEFAULT_MOTOR_BOUNDS = APP_CONFIG.hardware.motor_bounds
+def save_settings_defaults(data: Dict[str, Any], path: str = SETTINGS_DEFAULTS_FILE) -> None:
+    """Save the pattern and display settings. Raises OSError."""
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
