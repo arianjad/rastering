@@ -23,7 +23,7 @@ the BLACS ports (55535, 55536) free, so a simulated copy can run next to the lab
   4 or more the log shows the fit error in um;
   Load…, Save as…, Use last, Clear), device home, user home and backlash (kept in the calibration
   file), camera exposure, gain, gamma, region, rotation and mirror, and the camera settings file (region,
-  display and file start folded: click the arrow by the heading).
+  display and file start folded: click a heading to open it).
 - **Pattern**: square (rows along x or columns along y), inward spiral, or a hull of corners you
   click on the image, visited column by column (down one, up the next); steps and bounds in image px. The points show on the image as you edit.
 - **Run**: Start (continuous) or Arm here (step with Step), Arm for BLACS, Hand to BLACS / Take

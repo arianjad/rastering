@@ -6,10 +6,11 @@ values and never emit.
 from __future__ import annotations
 
 import os
-from typing import Optional, Sequence, Tuple
+from typing import Any, Dict, Optional, Sequence, Tuple
 
 from PyQt5 import QtCore, QtWidgets
 
+from calibration import MIN_SPOTS
 from .widgets import IntBox, NumberBox, Section, label, set_prop
 
 
@@ -46,10 +47,8 @@ class SetupStep(QtWidgets.QWidget):
         self.calibrate_btn = QtWidgets.QPushButton("Calibrate")
         self.calibrate_btn.setToolTip("Fit image px to stage mm: jog the beam to a spot, click the laser "
                                       "spot on the image; once per spot.")
-        self.spots_label = label("spots")
-        self.spots = IntBox(minimum=3, maximum=20)
-        self.spots.setValue(3)
-        self.spots.setFixedWidth(56)
+        self.spots = IntBox(MIN_SPOTS, 20, "spots")
+        self.spots.setFixedWidth(84)
         self.spots.setToolTip("How many spots to click. 3 fit exactly; with 4 or more the log shows "
                               "the fit error in um, so a mis-click shows.")
         self.cancel_btn = QtWidgets.QPushButton("Cancel calibration")
@@ -57,7 +56,7 @@ class SetupStep(QtWidgets.QWidget):
         self.restore_camera_btn = QtWidgets.QPushButton("Use the calibration's camera settings")
         self.restore_camera_btn.setToolTip("Set the camera region, rotation and mirror back to the ones "
                                            "this calibration was made with.")
-        g.addLayout(_row(self.calibrate_btn, self.spots, self.spots_label, self.cancel_btn), 2, 0, 1, 2)
+        g.addLayout(_row(self.calibrate_btn, self.spots, self.cancel_btn), 2, 0, 1, 2)
         g.addLayout(_row(self.restore_camera_btn), 3, 0, 1, 2)
 
         self.load_btn = QtWidgets.QPushButton("Load…")
@@ -168,7 +167,7 @@ class SetupStep(QtWidgets.QWidget):
         self.cal_detail.setText(detail)
         self.cal_detail.setVisible(bool(detail))
         self.cancel_btn.setVisible(calibrating)
-        for w in (self.calibrate_btn, self.spots, self.spots_label):
+        for w in (self.calibrate_btn, self.spots):
             w.setVisible(not calibrating)
         self.restore_camera_btn.setVisible(state == "stale")
         show = M is not None and not calibrating
@@ -180,6 +179,13 @@ class SetupStep(QtWidgets.QWidget):
             for cells, texts in zip(self._m, rows):
                 for cell, t in zip(cells, texts):
                     cell.setText(t.replace("-", "−"))
+
+    def settings(self) -> Dict[str, Any]:
+        return {"spots": self.spots.value()}
+
+    def apply_settings(self, d: Dict[str, Any]) -> None:
+        if d.get("spots") is not None:
+            self.spots.setValue(int(d["spots"]))
 
     def show_user_home(self, x: Optional[float], y: Optional[float]) -> None:
         """The user home [mm]; None: not set."""

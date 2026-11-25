@@ -28,6 +28,7 @@ LAST_CALIBRATION_POINTER = os.path.join(HERE, "last_calibration_state.json")
 # A fit is refused unless the stage moved at least this far in x and in y between the clicks
 # [mm]: with less, the fit has no information on that axis (a stage moved in x only gave
 # "scale 1.9e-09 mm/px").
+MIN_SPOTS = 3                  # an affine fit needs 3 spots; from 4 on it has a fit error
 MIN_STAGE_SPAN_MM = 0.010
 # A fit or a calibration file above this condition number (largest / smallest singular value) is
 # used with a warning. Camera pixels are square and the stage axes square to each other, so a real
@@ -97,8 +98,8 @@ def fit_affine(px_points: Sequence[XY], mm_points: Sequence[XY]) -> Tuple[Affine
     the fit puts each clicked spot from its stage position); 3 spots fit exactly, so a mis-click
     shows only from the 4th spot on. Raises ValueError (plain words) when it cannot fit."""
     n = len(px_points)
-    if n < 3 or len(mm_points) != n:
-        raise ValueError(f"need at least 3 spots with a stage position each (have {n})")
+    if n < MIN_SPOTS or len(mm_points) != n:
+        raise ValueError(f"need at least {MIN_SPOTS} spots with a stage position each (have {n})")
     span = np.ptp(np.asarray(mm_points, dtype=float), axis=0)
     if span.min() < MIN_STAGE_SPAN_MM:
         raise ValueError(f"the stage moved only {span[0] * 1000:.1f} um in x and {span[1] * 1000:.1f} um in y "
@@ -117,7 +118,7 @@ def fit_affine(px_points: Sequence[XY], mm_points: Sequence[XY]) -> Tuple[Affine
                             max_cond=None)      # above MAX_MATRIX_COND: used, the controller warns
     scale = float(np.sqrt(abs(np.linalg.det(cal.M))))
     words = f"{n} spots, scale {scale:.4g} mm/px"
-    if n > 3:
+    if n > MIN_SPOTS:
         err_um = 1000.0 * np.hypot(*(cal.px_to_mm_many(px_points) - np.asarray(mm_points, dtype=float)).T)
         words += f", fit error {np.sqrt(np.mean(err_um ** 2)):.1f} um rms, {err_um.max():.1f} um worst spot"
     return cal, words

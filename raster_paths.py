@@ -122,7 +122,18 @@ def _square(spec: RasterSpec) -> List[XY]:
         raise _too_many(xs.size * ys.size)
     if spec.kind == "square_x":
         return [(float(x), float(y)) for i, y in enumerate(ys) for x in (xs if i % 2 == 0 else xs[::-1])]
-    return [(float(x), float(y)) for i, x in enumerate(xs) for y in (ys if i % 2 == 0 else ys[::-1])]
+    return _snake_columns(xs, ys)
+
+
+def _snake_columns(xs: np.ndarray, ys: np.ndarray, keep: Optional[np.ndarray] = None) -> List[XY]:
+    """Column by column along xs; the first column runs along ys, the next back, and so on.
+    keep [column, row]: the grid points to visit (None: all); a column with none is skipped."""
+    cols = []
+    for i, x in enumerate(xs):
+        y = ys if keep is None else ys[keep[i]]
+        if y.size:
+            cols.append(np.column_stack([np.full(y.size, x), y if len(cols) % 2 == 0 else y[::-1]]))
+    return list(map(tuple, np.concatenate(cols).tolist())) if cols else []
 
 
 def _spiral(spec: RasterSpec) -> List[XY]:
@@ -182,7 +193,8 @@ def _check_spiral_size(spec: RasterSpec) -> None:
 
 def _hull(hull: Sequence[XY], xstep: float, ystep: float) -> List[XY]:
     """The grid points inside the convex hull of the clicked corners, over the hull's bounding box
-    (RaX's spots), column by column like the squares: down the first column, up the next."""
+    (RaX's spots), column by column like the squares: from the top row (ymax) down the first
+    column, back up the next."""
     if len(hull) < 3:
         raise ValueError("a convex hull needs at least 3 points: click them on the image")
     if xstep <= 0 or ystep <= 0:
@@ -199,10 +211,8 @@ def _hull(hull: Sequence[XY], xstep: float, ystep: float) -> List[XY]:
                          "increase step x / y for this hull")
     gx, gy = np.meshgrid(xs, ys, indexing="ij")
     grid = np.column_stack([gx.ravel(), gy.ravel()])
-    idx = np.flatnonzero(tri.find_simplex(grid) >= 0)        # x outer, y inner
-    if len(idx) > MAX_PATH_POINTS:
-        raise _too_many(len(idx))
-    col, row = np.divmod(idx, ys.size)
-    _, rank = np.unique(col, return_inverse=True)          # 0, 1, 2 ... over columns with points
-    inside = grid[idx[np.lexsort((np.where(rank % 2 == 0, row, -row), rank))]]
-    return [(float(x), float(y)) for x, y in inside]
+    inside = (tri.find_simplex(grid) >= 0).reshape(xs.size, ys.size)     # [column, row]
+    n = int(inside.sum())
+    if n > MAX_PATH_POINTS:
+        raise _too_many(n)
+    return _snake_columns(xs, ys[::-1], inside[:, ::-1])                  # top row first, as the squares

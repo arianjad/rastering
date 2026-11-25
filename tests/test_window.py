@@ -677,17 +677,19 @@ def test_a_held_arrow_repeats_but_never_runs_ahead_of_the_stage(make):
     slow stage the jogs piled up and the stage kept moving after the button was let go. A held
     arrow repeats only once the last step is done, and letting go adds no step."""
     rig, win = make(calibrated=False)
-    gate = threading.Event()                    # the stage stalls on its first move
-    rig.x.gate = rig.y.gate = gate
     b = win.jog.arrow_buttons[(1, 0)]
+    b.click()                                   # one plain click: the motor calls one jog makes
+    rig.idle()
+    per_jog = len(rig.moves())
+    gate = threading.Event()                    # the stage stalls on the next move
+    rig.x.gate = rig.y.gate = gate
     QTest.mousePress(b, QtCore.Qt.LeftButton)
     pump(1.2)                                   # about 5 repeats: 400 ms, then every 150 ms
     QTest.mouseRelease(b, QtCore.Qt.LeftButton)
     gate.set()
     rig.idle()
     pump()
-    jogs = [t for k, t in rig.messages if t.startswith("Jog (") and t.endswith(" ...")]
-    assert len(jogs) == 1
+    assert len(rig.moves()) == 2 * per_jog      # the click, then one repeat
 
 
 def test_rarely_used_camera_sections_start_folded_and_open_with_one_click(make):
@@ -698,7 +700,7 @@ def test_rarely_used_camera_sections_start_folded_and_open_with_one_click(make):
     cp = win.camera_panel
     sections = (cp._roi_group, cp._disp_group, cp._file_group)
     assert all(s.is_folded() for s in sections)
-    cp._roi_group.fold_btn.click()
+    cp._roi_group.title.click()
     assert not cp._roi_group.is_folded()
 
 
@@ -720,7 +722,4 @@ def test_no_run_button_stands_out_while_blacs_steps_the_raster(make):
     rig, win = make(blacs=True)
     assert rig.blacs.program("arm_raster", 0)["armed"] == 3
     pump_until(lambda: win.bar.status()["state"] == "armed")
-    r = win.run
-    buttons = (r.start_btn, r.arm_blacs_btn, r.step_btn, r.stop_btn, r.hand_btn, r.take_back_btn,
-               r.pause_btn, r.continue_btn)
-    assert [b.text() for b in buttons if b.property("kind") == "primary"] == []
+    assert [b.text() for b in win.run.buttons if b.property("kind") == "primary"] == []

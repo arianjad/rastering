@@ -205,6 +205,10 @@ QPushButton:focus, QToolButton:focus {{ border: 2px solid {t['ink']}; padding: 4
 QPushButton:disabled, QToolButton:disabled {{
     color: {t['dim']}; background: {t['ground']}; border-color: {t['rule']};
 }}
+QToolButton[kind="icon"], QToolButton[kind="icon"]:focus {{ padding: 0px; }}
+QToolButton[kind="bare"] {{ background: transparent; border: none; padding: 0px; color: {t['ink']}; }}
+QToolButton[kind="bare"]:hover {{ background: transparent; color: {t['label']}; }}
+QToolButton[kind="bare"]:focus {{ border: 1px solid {t['ink']}; padding: 0px; }}
 QPushButton[kind="primary"] {{ background: {t['ink']}; color: {t['ground']}; border-color: {t['ink']}; font-weight: 600; }}
 QPushButton[kind="primary"]:hover {{ background: {t['label']}; border-color: {t['label']}; }}
 QPushButton[kind="primary"]:focus {{ border: 2px solid {t['path']}; }}

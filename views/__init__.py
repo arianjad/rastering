@@ -6,7 +6,7 @@ from .control_bar import ControlBar
 from .jog_pad import JogPad
 from .log_line import LogLine
 from .step_rail import StepRail
-from .widgets import IntBox, NumberBox, Section, label, set_prop
+from .widgets import IntBox, NumberBox, Section, label, sentence, set_prop
 
 __all__ = ["CameraPanel", "CameraView", "ControlBar", "IntBox", "JogPad", "LogLine", "NumberBox",
-           "Section", "StepRail", "label", "set_prop", "unreachable_mask"]
+           "Section", "StepRail", "label", "sentence", "set_prop", "unreachable_mask"]

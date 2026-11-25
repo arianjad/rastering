@@ -23,7 +23,7 @@ from PyQt5.QtCore import QObject, pyqtSignal
 
 import blacs_link
 
-from calibration import (LAST_CALIBRATION_POINTER, MAX_MATRIX_COND, AffineCalibration, CalibrationFile,
+from calibration import (LAST_CALIBRATION_POINTER, MAX_MATRIX_COND, MIN_SPOTS, AffineCalibration, CalibrationFile,
                          fit_affine, read_calibration_file, remember_calibration_path,
                          remembered_calibration_path, write_calibration_file)
 from config import APP_CONFIG, SETTINGS_DEFAULTS_FILE, SIM_FOLDER, AppConfig, HardwareConfig
@@ -73,6 +73,7 @@ class SystemController(QObject):
     message = pyqtSignal(str, str)                # kind ("info", "warning", "red_warning", "refused", "error"), text
     position_changed = pyqtSignal(object)         # StagePosition
     busy_changed = pyqtSignal(bool)               # the motor thread has stage jobs
+    hand_move_answer = pyqtSignal(str, str)       # a hand move's outcome: kind ("": nothing to say), text
     raster_changed = pyqtSignal(object)           # RasterSnapshot (can arrive out of order: see its seq)
     calibration_changed = pyqtSignal(object)      # CalibrationFile, or None: no calibration
     calibration_progress = pyqtSignal(int, int)   # spots recorded, spots needed; (0, 0): not calibrating
@@ -99,7 +100,8 @@ class SystemController(QObject):
         self._link_status: Tuple[str, str] = ("", "")
         self._stage = Stage(motor_x, motor_y, travel_mm, raster_state=self._raster_state,
                             on_log=self.message.emit, on_position=self.position_changed.emit,
-                            on_backlash=self.backlash_changed.emit, on_busy=self.busy_changed.emit)
+                            on_backlash=self.backlash_changed.emit, on_busy=self.busy_changed.emit,
+                            on_answer=self.hand_move_answer.emit)
         self.read_backlash()
 
     # --- what the window reads ---
@@ -191,6 +193,7 @@ class SystemController(QObject):
         if None in need:
             words = "no user home set: set one in Setup (Stage, User home)"
             self.message.emit("refused", words)
+            self.hand_move_answer.emit("refused", words)
             future: "Future[Result]" = Future()
             future.set_result(Result(False, words, "no_user_home"))
             return future
@@ -341,15 +344,20 @@ class SystemController(QObject):
             self.message.emit("info", "Raster taken back from BLACS: step it at the GUI.")
         return Result(True)
 
-    def stop_raster(self) -> None:
-        """End the raster (any state); queued raster points are dropped."""
+    def stop_raster(self, *, gui_only: bool = False) -> str:
+        """End the raster (any state); queued raster points are dropped. gui_only (Esc): only a
+        raster the GUI holds or runs; one BLACS holds stays armed. Returns the state found."""
         with self._lock:
+            found = self._session.state
+            if gui_only and found == ARMED:
+                return found
             was = self._session.stop()
             self._cancel_run_timer_locked()
             snap = self._session.snapshot()
         if was:
             self.raster_changed.emit(snap)
             self.message.emit("info", "Raster stopped.")
+        return found
 
     # --- BLACS (called by blacs_link.RaxLink on its request thread; raise Refused) ---
 
@@ -402,7 +410,7 @@ class SystemController(QObject):
 
     # --- calibration ---
 
-    def start_calibration(self, required_points: int = 3, *,
+    def start_calibration(self, required_points: int = MIN_SPOTS, *,
                           camera_settings: Optional[Dict[str, Any]] = None) -> Result:
         """Collect `required_points` clicks, each paired with the stage position read after the
         jobs queued before it. camera_settings: the camera geometry now, stored with the fit."""

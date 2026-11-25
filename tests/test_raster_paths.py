@@ -45,15 +45,20 @@ def _old_hull_loop(hull, xstep, ystep):
     ([(0, 0), (90, 3), (95, 11), (4, 9), (50, 5)], (2.5, 0.5)),          # thin sliver, inner point
 ])
 def test_hull_fill_visits_raxs_spots_snaking_like_the_squares(hull, step):
-    """Harm stopped: the hull fill ablates a different set of spots than RaX's loop, or jumps
-    back to the top after each column (one long stage move per column, which the squares never
-    make). Same spots as RaX's loop, column by column: down the first, up the next, and so on."""
+    """Harm stopped: the hull fill ablates a different set of spots than RaX's loop, jumps back
+    after each column (one long stage move per column, which the squares never make), or runs
+    its columns the other way round from the squares. Same spots as RaX's loop, column by
+    column like the squares: from the top row (largest y) down the first, back up the next."""
     spec = RasterSpec(kind="hull", hull_points=hull, xstep=step[0], ystep=step[1])
     columns = {}
-    for p in _old_hull_loop(hull, *step):          # x outer, y inner (top to bottom)
+    for p in _old_hull_loop(hull, *step):          # x outer, y inner (smallest y first)
         columns.setdefault(p[0], []).append(p)
-    snake = [p for i, col in enumerate(columns.values()) for p in (col if i % 2 == 0 else col[::-1])]
+    snake = [p for i, col in enumerate(columns.values()) for p in (col[::-1] if i % 2 == 0 else col)]
     assert points_from_spec(spec) == snake
+    square = points_from_spec(RasterSpec(kind="square_y", bounds=(0, 10, 0, 10), xstep=5, ystep=5))
+    for path in (square, snake):                   # both run their first column down from the top
+        first = [y for x, y in path if x == path[0][0]]
+        assert first == sorted(first, reverse=True)
 
 
 def test_square_patterns_snake_from_the_top_left_corner():

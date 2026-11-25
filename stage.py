@@ -72,7 +72,6 @@ class Result:
     px: Optional[XY] = None        # a move in px: the point it was sent to [px]
     value: Optional[float] = None  # backlash [mm]
     warning: str = ""
-    red: bool = False              # the warning is red (hardware harm or a shot on an unrecorded spot)
 
 
 @dataclass(frozen=True)
@@ -153,16 +152,19 @@ class Stage:
 
     raster_state() -> (state word, run) is asked on the motor thread for check (b). The on_*
     callbacks are called on the motor thread: on_log(kind, text) with kind "info", "refused" or
-    "error"; on_position(StagePosition); on_backlash(axis, mm); on_busy(bool).
+    "error"; on_position(StagePosition); on_backlash(axis, mm); on_busy(bool); on_answer(kind,
+    text) once per hand move (not a raster point, not from BLACS) as it starts or fails: kind ""
+    (nothing to say), "warning", "red_warning", "refused" or "error".
     """
 
     def __init__(self, motor_x: Motor, motor_y: Motor, travel_mm: Bounds, *,
                  raster_state: Callable[[], Tuple[str, int]] = lambda: (OFF, 0),
-                 on_log=_quiet, on_position=_quiet, on_backlash=_quiet, on_busy=_quiet):
+                 on_log=_quiet, on_position=_quiet, on_backlash=_quiet, on_busy=_quiet, on_answer=_quiet):
         self._motors = {"X": motor_x, "Y": motor_y}
         self.travel_mm: Bounds = tuple(float(v) for v in travel_mm)
         self._raster_state = raster_state
         self._log, self._on_position, self._on_backlash, self._on_busy = on_log, on_position, on_backlash, on_busy
+        self._on_answer = on_answer
         self._lock = threading.Lock()
         self._calibration: Optional[AffineCalibration] = None
         self._position: Optional[StagePosition] = None
@@ -322,18 +324,26 @@ class Stage:
             return Result(True, value=value)
         except Exception as e:
             self._log("error", f"{cmd.label} failed: {e}")
+            self._answer(cmd, "error", f"{cmd.label} failed: {e}")
             return Result(False, words=f"{cmd.label} failed: {e}", code="motor_move_failed")
+
+    def _answer(self, cmd: Command, kind: str = "", text: str = "") -> None:
+        if cmd.kind in ("move", "home") and cmd.raster_run is None and not cmd.from_blacs:
+            self._on_answer(kind, text)
 
     def _move(self, cmd: Command) -> Result:
         admitted = self._admit(cmd)
         if isinstance(admitted, Result):
             if cmd.raster_run is None:       # a dropped raster point: the window shows why already
                 self._log("refused", f"{cmd.label}: {admitted.words}")
+                self._answer(cmd, "refused", f"{cmd.label}: {admitted.words}")
             return admitted
         target, warning, red = admitted
+        kind = ("red_warning" if red else "warning") if warning else ""
         if warning:
             warning = f"{cmd.label}: {warning}"
-            self._log("red_warning" if red else "warning", warning)
+            self._log(kind, warning)
+        self._answer(cmd, kind, warning)
         if not cmd.quiet:
             self._log("info", f"{cmd.label} ...")
         if cmd.kind == "home":
@@ -347,7 +357,7 @@ class Stage:
         self._set_position(mm, cmd.px)
         if not cmd.quiet:
             self._log("info", f"{cmd.label}: done, motor ({mm[0]:.4f}, {mm[1]:.4f}) mm")
-        return Result(True, mm=mm, px=cmd.px, warning=warning, red=bool(warning) and red)
+        return Result(True, mm=mm, px=cmd.px, warning=warning)
 
     def _admit(self, cmd: Command):
         """The one admission check: (target [mm] or None for a home, warning words, red), or a

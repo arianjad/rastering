@@ -11,7 +11,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from PyQt5 import QtCore, QtWidgets
 
 from raster_paths import RasterSpec
-from .widgets import NumberBox, Section, label, set_prop
+from .widgets import NumberBox, Section, label, sentence, set_prop
 
 XY = Tuple[float, float]
 KINDS = (("square_x", "Square, rows along x"), ("square_y", "Square, columns along y"),
@@ -201,7 +201,7 @@ class PatternStep(QtWidgets.QWidget):
         if points is None:
             self.count.setText("No pattern")
             set_prop(self.count, "tone", "fault")
-            self.count_detail.setText(error[:1].upper() + error[1:] + ("." if error and error[-1] != "." else ""))
+            self.count_detail.setText(sentence(error) + ("." if error and error[-1] != "." else ""))
             set_prop(self.count_detail, "tone", "fault")
             return
         self.count.setText(f"{points} point{'s' if points != 1 else ''}")

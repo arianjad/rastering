@@ -58,8 +58,9 @@ class RunStep(QtWidgets.QWidget):
         grid = QtWidgets.QGridLayout()
         grid.setHorizontalSpacing(8)
         grid.setVerticalSpacing(8)
-        for i, b in enumerate((self.start_btn, self.arm_blacs_btn, self.step_btn, self.stop_btn,
-                               self.hand_btn, self.take_back_btn, self.pause_btn, self.continue_btn)):
+        self.buttons = (self.start_btn, self.arm_blacs_btn, self.step_btn, self.stop_btn,
+                        self.hand_btn, self.take_back_btn, self.pause_btn, self.continue_btn)
+        for i, b in enumerate(self.buttons):
             grid.addWidget(b, i // 2, i % 2)
         grid.addWidget(self.rearm_btn, 4, 0, 1, 2)
         g.addLayout(grid, 1, 0, 1, 2)
@@ -171,8 +172,7 @@ class RunStep(QtWidgets.QWidget):
 
     def set_primary(self, button) -> None:
         """Style one button as the main action now (None: no button stands out)."""
-        for b in (self.start_btn, self.arm_blacs_btn, self.step_btn, self.stop_btn, self.hand_btn,
-                  self.take_back_btn, self.pause_btn, self.continue_btn, self.rearm_btn):
+        for b in self.buttons + (self.rearm_btn,):
             set_prop(b, "kind", "primary" if b is button else "edited" if b is self.rearm_btn else "")
 
     # ---------------- saved settings ----------------

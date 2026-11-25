@@ -24,7 +24,7 @@ from config import SETTINGS_DEFAULTS_FILE, load_settings_defaults, save_settings
 from raster_paths import nearest_index, points_from_spec
 from raster_session import RasterPlan, RasterSnapshot
 from stage import StagePosition
-from views import CameraPanel, CameraView, ControlBar, JogPad, LogLine, Section, StepRail, label, set_prop
+from views import CameraPanel, CameraView, ControlBar, JogPad, LogLine, Section, StepRail, label, sentence, set_prop
 from views.camera_view import drawn_every, unreachable_mask
 from views.pattern_step import USES_BOUNDS, PatternStep
 from views.run_step import RunStep
@@ -94,6 +94,9 @@ def gates(state: str, *, calibrated: bool, calibrating: bool, pattern_ok: bool,
     }
 
 
+# What File > Save settings as defaults keeps (each part's settings()).
+SAVED_DEFAULTS = "pattern, run options, trail, jog steps and calibration spots"
+
 # The highlighted Run button per state. None while BLACS steps the raster: the most visible button
 # must not be one that takes the stage from a running sequence.
 PRIMARY = {"off": "start", "local": "step", "running": "stop", "armed": None}
@@ -147,7 +150,6 @@ class RasterWindow(QtWidgets.QMainWindow):
     passes theme.save_light_pref; tests and scripts pass nothing)."""
 
     _backlash_not_set = QtCore.pyqtSignal(str)   # axis whose backlash Set failed (sent from the motor thread)
-    _move_answer = QtCore.pyqtSignal(str, bool)  # a hand move's warning or refusal, red (motor thread)
 
     def __init__(self, controller, camera, *, camera_config: ThorCamConfig, geometry: DisplayGeometry,
                  camera_file: str = "", log_dir: str = os.path.join(HERE, "logs"),
@@ -161,6 +163,7 @@ class RasterWindow(QtWidgets.QMainWindow):
         self._snap: RasterSnapshot = controller.raster_snapshot()
         self._pos: Optional[StagePosition] = None
         self._busy = False
+        self._last_jog = None                # Future of the last arrow jog
         self._cal_progress = (0, 0)
         self._cal_clicks: List[XY] = []
         self._points: List[XY] = []
@@ -253,7 +256,7 @@ class RasterWindow(QtWidgets.QMainWindow):
         file_menu = self.menuBar().addMenu("&File")
         a = file_menu.addAction("Save settings as defaults", self._save_defaults)
         a.setShortcut(QtGui.QKeySequence("Ctrl+D"))
-        a.setToolTip("Pattern, run options, trail, jog steps and calibration spots, loaded at the next start.")
+        a.setToolTip(f"{sentence(SAVED_DEFAULTS)}, loaded at the next start.")
         file_menu.addAction("Revert to saved defaults", self._revert_defaults)
         file_menu.addSeparator()
         a = file_menu.addAction("Exit", self.close)
@@ -305,9 +308,9 @@ class RasterWindow(QtWidgets.QMainWindow):
         s.use_last_btn.clicked.connect(lambda: c.load_calibration())
         s.clear_btn.clicked.connect(c.clear_calibration)
         s.restore_camera_btn.clicked.connect(self._restore_camera)
-        s.home_x_btn.clicked.connect(lambda: self._hand(c.home("X")))
-        s.home_y_btn.clicked.connect(lambda: self._hand(c.home("Y")))
-        s.home_both_btn.clicked.connect(lambda: (self._hand(c.home("X")), self._hand(c.home("Y"))))
+        s.home_x_btn.clicked.connect(lambda: c.home("X"))
+        s.home_y_btn.clicked.connect(lambda: c.home("Y"))
+        s.home_both_btn.clicked.connect(lambda: (c.home("X"), c.home("Y")))
         s.user_home_set_btn.clicked.connect(self._set_user_home)
         s.user_home_here_btn.clicked.connect(self._user_home_here)
         s.backlash_set_btn.clicked.connect(self._set_backlash)
@@ -335,9 +338,9 @@ class RasterWindow(QtWidgets.QMainWindow):
 
         j = self.jog
         j.jog_requested.connect(self._jog)
-        j.go_to_requested.connect(lambda x, y: self._hand(c.move_mm(x, y)))
-        j.home_requested.connect(lambda: self._hand(c.go_user_home()))
-        self._move_answer.connect(j.show_answer)
+        j.go_to_requested.connect(c.move_mm)
+        j.home_requested.connect(lambda: c.go_user_home())
+        c.hand_move_answer.connect(lambda kind, text: j.show_answer(text, red=kind not in ("", "warning")))
         j.x_box.valueChanged.connect(self._goto_typed)
         j.y_box.valueChanged.connect(self._goto_typed)
 
@@ -421,7 +424,7 @@ class RasterWindow(QtWidgets.QMainWindow):
     # ================================================================ controller -> window
     def _on_message(self, kind: str, text: str) -> None:
         """kind "info" and "warning" in the ink colour; "red_warning", "refused", "error" in red."""
-        self.log.add(text[:1].upper() + text[1:], error=kind not in ("info", "warning"))
+        self.log.add(sentence(text), error=kind not in ("info", "warning"))
 
     # Signals from the motor thread arrive queued, those from the GUI thread at once, so an older
     # one can arrive after a newer one: each handler reads the controller's state now.
@@ -660,22 +663,11 @@ class RasterWindow(QtWidgets.QMainWindow):
                          "exit unless you save a calibration (Setup, Save as…).", error=True)
 
     def _jog(self, sx: int, sy: int, step_mm: float) -> None:
-        if self.jog.held() and self._busy:   # a held arrow repeats only once the last step is done
-            return
+        if self.jog.held() and self._last_jog is not None and not self._last_jog.done():
+            return                           # a held arrow repeats only once its last step is done
         cal = self.ctl.calibration
         dx, dy = jog_vector_mm(sx, sy, step_mm, self._geometry, cal.M if cal is not None else None)
-        self._hand(self.ctl.jog_mm(dx, dy))
-
-    def _hand(self, future) -> None:
-        """A stage move asked for here: what it cost (warning) or why it did not run shows under
-        the jog pad, next to the button pressed; a move with neither clears that line."""
-        def done(f):
-            try:
-                r = f.result()
-            except Exception:            # cancelled at close
-                return
-            self._move_answer.emit(r.words if not r.ok else r.warning, (not r.ok) or r.red)
-        future.add_done_callback(done)
+        self._last_jog = self.ctl.jog_mm(dx, dy)
 
     def _goto_typed(self, *_) -> None:
         self._goto_shown = True
@@ -691,13 +683,15 @@ class RasterWindow(QtWidgets.QMainWindow):
 
     # ================================================================ pattern and run
     def _pattern_changed(self) -> None:
-        """A pattern or run option changed: rebuild the points, show them, send the pending plan."""
-        self._spec = spec = self.pattern.spec()
-        try:
-            self._points, error = points_from_spec(spec), ""
-        except ValueError as e:
-            self._points, error = [], str(e)
-        self._pattern_error = error
+        """A pattern or run option changed: rebuild the points if the pattern did (up to 2 million
+        points take about a second), show them, send the pending plan."""
+        spec = self.pattern.spec()
+        if spec != self._spec:
+            self._spec = spec
+            try:
+                self._points, self._pattern_error = points_from_spec(spec), ""
+            except ValueError as e:
+                self._points, self._pattern_error = [], str(e)
         self._show_pattern_result()
         o = self.run.settings()
         self.ctl.set_pending_plan(RasterPlan(spec, pingpong=o["pingpong"], continuous=o["continuous"],
@@ -762,14 +756,11 @@ class RasterWindow(QtWidgets.QMainWindow):
     def _escape(self) -> None:
         """Esc: stop the GUI's own raster (held here or running) and stop collecting calibration
         spots. A raster BLACS holds stays armed: an Esc pressed by habit, to leave a box, would park
-        the stage while BLACS goes on shooting one spot. The Stop button stops BLACS's raster. Asks
-        the controller, not the window: the raster may have changed hands a moment ago."""
+        the stage while BLACS goes on shooting one spot. The Stop button stops BLACS's raster. The
+        controller decides under its lock: the raster may have changed hands a moment ago."""
         if self._cal_progress != (0, 0):
             self.ctl.cancel_calibration()
-        state = self.ctl.raster_snapshot().state
-        if state in ("local", "running"):
-            self.ctl.stop_raster()
-        elif state == "armed":
+        if self.ctl.stop_raster(gui_only=True) == "armed":
             self.log.add("Esc leaves BLACS's raster armed. To stop it, press Stop.")
 
     # ================================================================ the image
@@ -815,37 +806,36 @@ class RasterWindow(QtWidgets.QMainWindow):
         self._show_step(SETUP if not calibrated else RUN if self._points else PATTERN)
 
     # ================================================================ settings, theme, exit
-    def _apply_saved_settings(self) -> None:
+    def _saved_parts(self):
+        """(key in the defaults file, view part). Run before pattern: the pattern's change reads
+        the run options."""
+        return (("run", self.run), ("pattern", self.pattern), ("jog", self.jog), ("calibration", self.setup))
+
+    def _apply_saved_settings(self) -> bool:
+        """Put the saved defaults in the views. Returns whether a defaults file was read."""
         path = self._defaults_path
         try:
-            d = load_settings_defaults(path) or {}
+            d = load_settings_defaults(path)
         except (OSError, ValueError) as e:
             self.log.add(f"Saved defaults not read from {path} ({e}): the window's own values are shown.",
                          error=True)
-            d = {}
+            d = None
+        found, d = d is not None, d or {}
         try:
-            pat = d.get("pattern") if isinstance(d.get("pattern"), dict) else {}
-            if isinstance(pat.get("bounds"), list):
+            sub = {key: d[key] if isinstance(d.get(key), dict) else {} for key, _ in self._saved_parts()}
+            if isinstance(sub["pattern"].get("bounds"), list):
                 self._fill_from_frame = False          # saved bounds win over the first frame's size
-            self.run.apply_settings(d.get("run") if isinstance(d.get("run"), dict) else {})
-            self.pattern.apply_settings(pat)              # emits changed once: the first points and plan
-            jog = d.get("jog") if isinstance(d.get("jog"), dict) else {}
-            if jog.get("step_mm") is not None:
-                self.jog.set_step_mm(float(jog["step_mm"]))
-            if jog.get("coarse_mm") is not None:
-                self.jog.set_coarse_mm(float(jog["coarse_mm"]))
-            cal = d.get("calibration") if isinstance(d.get("calibration"), dict) else {}
-            if cal.get("spots") is not None:
-                self.setup.spots.setValue(int(cal["spots"]))
+            for key, part in self._saved_parts():     # the pattern's emits changed once: points and plan
+                part.apply_settings(sub[key])
         except Exception as e:          # a hand-edited value of the wrong type: open all the same
             self.log.add(f"Saved defaults in {path} not all used ({type(e).__name__}: {e}): the values "
                          "after the bad one are the window's own.", error=True)
             self._pattern_changed()
+        return found
 
     def settings(self) -> dict:
         """What File > Save settings as defaults writes."""
-        return {"pattern": self.pattern.settings(), "run": self.run.settings(),
-                "jog": {"step_mm": self.jog.step_mm(), "coarse_mm": self.jog.coarse_mm()}, "calibration": {"spots": self.setup.spots.value()}}
+        return {key: part.settings() for key, part in self._saved_parts()}
 
     def _save_defaults(self) -> None:
         try:
@@ -853,17 +843,15 @@ class RasterWindow(QtWidgets.QMainWindow):
         except (OSError, TypeError, ValueError) as e:
             self.log.add(f"Defaults not saved: {e}", error=True)
             return
-        self.log.add(f"Pattern, run options, jog steps and calibration spots saved as defaults "
-                     f"({os.path.basename(self._defaults_path)}).")
+        self.log.add(f"{sentence(SAVED_DEFAULTS)} saved as defaults ({os.path.basename(self._defaults_path)}).")
 
     def _revert_defaults(self) -> None:
-        """File > Revert to saved defaults: the saved pattern, run options, jog steps and spots."""
-        if not os.path.exists(self._defaults_path):
+        """File > Revert to saved defaults."""
+        if self._apply_saved_settings():
+            self.log.add(f"{sentence(SAVED_DEFAULTS)} set back to the saved defaults "
+                         f"({os.path.basename(self._defaults_path)}).")
+        elif not os.path.exists(self._defaults_path):
             self.log.add("No saved defaults yet: File > Save settings as defaults saves the ones shown.")
-            return
-        self._apply_saved_settings()
-        self.log.add(f"Pattern, run options, jog steps and calibration spots set back to the saved defaults "
-                     f"({os.path.basename(self._defaults_path)}).")
 
     def _set_light(self, on: bool) -> None:
         theme.apply_theme(QtWidgets.QApplication.instance(), light=bool(on))
