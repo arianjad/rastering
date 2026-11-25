@@ -163,7 +163,6 @@ class RasterWindow(QtWidgets.QMainWindow):
         self._snap: RasterSnapshot = controller.raster_snapshot()
         self._pos: Optional[StagePosition] = None
         self._busy = False
-        self._last_jog = None                # Future of the last arrow jog
         self._cal_progress = (0, 0)
         self._cal_clicks: List[XY] = []
         self._points: List[XY] = []
@@ -663,11 +662,9 @@ class RasterWindow(QtWidgets.QMainWindow):
                          "exit unless you save a calibration (Setup, Save as…).", error=True)
 
     def _jog(self, sx: int, sy: int, step_mm: float) -> None:
-        if self.jog.held() and self._last_jog is not None and not self._last_jog.done():
-            return                           # a held arrow repeats only once its last step is done
         cal = self.ctl.calibration
         dx, dy = jog_vector_mm(sx, sy, step_mm, self._geometry, cal.M if cal is not None else None)
-        self._last_jog = self.ctl.jog_mm(dx, dy)
+        self.ctl.jog_mm(dx, dy)
 
     def _goto_typed(self, *_) -> None:
         self._goto_shown = True

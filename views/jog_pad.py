@@ -2,9 +2,9 @@
 
 Emits signals only. Directions are as seen on the image (+x right, +y up); the
 window turns them into stage axes using the display geometry and calibration.
-Two rings of arrows, as in Micro-Manager's stage control: the inner single arrows
-move by the fine step, the outer double arrows by the coarse step. Holding an
-arrow repeats it; the window skips a repeat while the last step is still moving.
+Two rings of arrows: the inner single arrows move by the fine step, the outer
+double arrows by the coarse step; both steps are set in the boxes beside them.
+One click, one step.
 """
 from __future__ import annotations
 
@@ -17,8 +17,6 @@ from .widgets import NumberBox, label, sentence, set_prop
 
 _ARROWS = {(0, 1): ("up", 90), (-1, 0): ("left", 180), (1, 0): ("right", 0), (0, -1): ("down", 270)}
 BUTTON_PX = 30
-REPEAT_DELAY_MS = 400      # hold this long before the first repeat
-REPEAT_EVERY_MS = 150
 
 
 def _arrow_icon(angle_deg: float, double: bool = False, size: int = 20) -> QtGui.QIcon:
@@ -79,7 +77,6 @@ class JogPad(QtWidgets.QWidget):
         self.arrow_buttons = {}        # fine step, inner ring
         self.coarse_buttons = {}       # coarse step, outer ring
         self._rings = ((self.arrow_buttons, self.step_box, False), (self.coarse_buttons, self.coarse_box, True))
-        self._repeating = None         # the arrow whose hold has repeated (its release adds no step)
         for ring, (buttons, box, coarse) in enumerate(self._rings, start=1):
             box.valueChanged.connect(self._retip)
             for (dx, dy), (name, _angle) in _ARROWS.items():
@@ -88,10 +85,8 @@ class JogPad(QtWidgets.QWidget):
                 b.setIconSize(QtCore.QSize(20, 20))
                 b.setFixedSize(BUTTON_PX, BUTTON_PX)
                 b.setAccessibleName(f"Jog {name}{' coarse' if coarse else ''}")
-                b.setAutoRepeat(True)
-                b.setAutoRepeatDelay(REPEAT_DELAY_MS)
-                b.setAutoRepeatInterval(REPEAT_EVERY_MS)
-                b.clicked.connect(lambda _=False, b=b, dx=dx, dy=dy, box=box: self._clicked(b, dx, dy, box))
+                b.clicked.connect(lambda _=False, dx=dx, dy=dy, box=box:
+                                  self.jog_requested.emit(dx, dy, float(box.value())))
                 buttons[(dx, dy)] = b
                 pad.addWidget(b, 2 - ring * dy, 2 + ring * dx)
         for i in range(5):
@@ -143,18 +138,7 @@ class JogPad(QtWidgets.QWidget):
 
     def _retip(self, *_):
         for b, (dx, dy), box, _coarse in self._arrows():
-            b.setToolTip(f"Move the spot {_ARROWS[(dx, dy)][0]} on the image by {float(box.value()):.3f} mm. "
-                         "Hold to repeat.")
-
-    def _clicked(self, b, dx: int, dy: int, box: NumberBox) -> None:
-        """A click, or a repeat while held. Qt also clicks on the release after repeats; that
-        one adds no step, so a hold moves exactly by its repeats."""
-        if b.isDown():
-            self._repeating = b
-        elif self._repeating is b:
-            self._repeating = None
-            return
-        self.jog_requested.emit(dx, dy, float(box.value()))
+            b.setToolTip(f"Move the spot {_ARROWS[(dx, dy)][0]} on the image by {float(box.value()):.3f} mm.")
 
     def step_mm(self) -> float:
         """The fine step [mm]."""
@@ -168,10 +152,6 @@ class JogPad(QtWidgets.QWidget):
 
     def set_coarse_mm(self, mm: float) -> None:
         self.coarse_box.setValue(float(mm))
-
-    def held(self) -> bool:
-        """An arrow is being held down (its clicks now are repeats)."""
-        return any(b.isDown() for b, *_ in self._arrows())
 
     def settings(self) -> Dict[str, Any]:
         return {"step_mm": self.step_mm(), "coarse_mm": self.coarse_mm()}

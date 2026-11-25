@@ -29,8 +29,8 @@ the BLACS ports (55535, 55536) free, so a simulated copy can run next to the lab
 - **Run**: Start (continuous) or Arm here (step with Step), Arm for BLACS, Hand to BLACS / Take
   back, Stop (Esc stops the GUI's own run, not BLACS's), Re-arm with edited pattern, go to a point, position history.
 - **Move stage** (always visible): the inner arrows move the spot on the image by the fine step,
-  the outer double arrows by the coarse step [mm]; hold an arrow to repeat (it waits for each step to
-  finish). A move's warning shows under the arrows, red when red; Go to x, y;
+  the outer double arrows by the coarse step [mm], one step per click. A move's warning shows under
+  the arrows, red when red; Go to x, y;
   Go to user home. Live in every state: a move while BLACS has the raster armed, or outside the
   0-12 mm travel, is done and logged in red; a jog past the travel edge stops at the edge.
 - File > Save settings as defaults keeps the pattern, run options, jog steps and number of calibration

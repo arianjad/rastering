@@ -672,26 +672,6 @@ def test_the_outer_arrows_move_by_the_coarse_step(make):
     assert abs(rig.x.pos - x0) + abs(rig.y.pos - y0) == pytest.approx(0.51)
 
 
-def test_a_held_arrow_repeats_but_never_runs_ahead_of_the_stage(make):
-    """Harm stopped: holding an arrow queued a jog every 150 ms whatever the stage did, so on a
-    slow stage the jogs piled up and the stage kept moving after the button was let go. A held
-    arrow repeats only once the last step is done, and letting go adds no step."""
-    rig, win = make(calibrated=False)
-    b = win.jog.arrow_buttons[(1, 0)]
-    b.click()                                   # one plain click: the motor calls one jog makes
-    rig.idle()
-    per_jog = len(rig.moves())
-    gate = threading.Event()                    # the stage stalls on the next move
-    rig.x.gate = rig.y.gate = gate
-    QTest.mousePress(b, QtCore.Qt.LeftButton)
-    pump(1.2)                                   # about 5 repeats: 400 ms, then every 150 ms
-    QTest.mouseRelease(b, QtCore.Qt.LeftButton)
-    gate.set()
-    rig.idle()
-    pump()
-    assert len(rig.moves()) == 2 * per_jog      # the click, then one repeat
-
-
 def test_rarely_used_camera_sections_start_folded_and_open_with_one_click(make):
     """Harm stopped: the Setup step needed about 500 px of scrolling at 1280 x 900, with the stage
     controls below camera region, display and file settings that are set once. Those three start
